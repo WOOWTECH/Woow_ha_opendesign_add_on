@@ -56,6 +56,7 @@ for needle, message in [
     ('"${GITHUB_REF_NAME:-}" != "$expected"', "preflight must reject a non-matching release tag"),
     ('for arch in amd64 aarch64', "preflight must inspect both architecture image names"),
     ('--user "${GHCR_ACTOR}:${GHCR_TOKEN}"', "preflight must use its read-only token so private existing tags cannot be missed"),
+    ('--request GET', "preflight must use a GET that works around GHCR HTTP/2 HEAD framing"),
     ('case "$status" in', "preflight must classify the registry response"),
     ("404)", "preflight may proceed only when the manifest is absent"),
     ("200)", "preflight must reject an existing manifest"),

@@ -38,8 +38,11 @@ for arch in amd64 aarch64; do
     echo "Registry returned no usable token for ${repository}; refusing to publish" >&2
     exit 1
   fi
+  # GHCR's HTTP/2 HEAD response advertises a manifest Content-Length but sends
+  # no body; some runner curl builds report error 18 before exposing the 404.
+  # A bounded GET avoids that protocol mismatch and the manifest is only KBs.
   if ! status=$(curl --silent --show-error --location --output /dev/null --write-out '%{http_code}' \
-    --request HEAD \
+    --request GET \
     --header "Authorization: Bearer ${token}" \
     --header "Accept: ${accept}" \
     "${registry_api}/v2/${repository}/manifests/${version}"); then

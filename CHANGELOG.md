@@ -30,3 +30,4 @@
 - Make the CI browser smoke observe blob-anchor clicks instead of unreliable GitHub-hosted Playwright download events; binary endpoint checks and HAOS acceptance still verify real downloaded files.
 - Serialize browser-bridge and renderer Chromium acceptance on small CI runners: deterministic binary stubs verify the bridge first, then a fresh container process namespace runs real image/PDF/PPTX endpoints.
 - Give every Chromium launch an ephemeral writable HOME/XDG profile, preventing Alpine crashpad state from leaking across render jobs or persisted `/data` volumes.
+- Query GHCR release-tag availability with GET instead of HTTP/2 HEAD, avoiding curl error 18 on bodyless manifest responses while preserving fail-closed status handling.
