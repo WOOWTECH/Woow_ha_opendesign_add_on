@@ -85,6 +85,7 @@ check("--disable-web-security" not in renderer, "renderer must not disable brows
 check("redirectPdfRequest" in export_bridge and "/export/image" in export_bridge, "browser PDF/image export bridge missing")
 check("proxy_pass http://127.0.0.1:7456" in nginx, "nginx may only forward to loopback OpenDesign")
 check("/tmp/ha-opendesign-nginx" in nginx, "unprivileged nginx temp paths missing")
+check("error_log stderr" in nginx and "access_log off" in nginx, "unprivileged nginx must not reopen HA Supervisor log pipes through /dev")
 check("container-smoke.sh" in workflow_text and "load: true" in workflow_text, "real amd64 container smoke lane missing")
 check("linux/amd64" in workflow_text and "linux/arm64" in workflow_text, "CI architecture matrix is incomplete")
 check("ghcr.io/woowtech/woow-ha-opendesign-${{ matrix.arch }}" in workflow_text, "CI GHCR architecture image name mismatch")

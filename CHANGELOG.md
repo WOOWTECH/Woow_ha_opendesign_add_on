@@ -23,4 +23,4 @@
 - Use and verify the upstream image's absolute `/usr/local/bin/npm` path so reduced build environments cannot lose npm from `PATH`.
 - Keep Supervisor `build.yaml` on the supported `0.21.1` tag syntax (digest syntax is silently replaced by the default HA base), while retaining digest pins in Dockerfile and CI/release builds.
 - Start a minimal root PID 1 to prepare HA's root-owned `/data` mount, then drop nginx and OpenDesign to UID/GID 1001 with `su-exec`; verify ownership and child UIDs in container smoke tests.
-- Pass nginx `-e stderr` after the UID drop so HA's container procfs does not reject reopening `/dev/stderr`.
+- Route nginx errors to its inherited `stderr` descriptor and disable access-log reopening after the UID drop, matching HA Supervisor's protected log pipes.
