@@ -16,8 +16,11 @@
       if (url.host !== window.location.host) return null;
       if (websocket) {
         if (url.protocol !== 'ws:' && url.protocol !== 'wss:' && url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-      } else if (url.origin !== window.location.origin) {
-        return null;
+      } else {
+        // Blob/data/about URLs are browser-local resources, not ingress paths.
+        // In particular, rewriting a blob: download URL breaks export links.
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+        if (url.origin !== window.location.origin) return null;
       }
       return `${url.pathname}${url.search}${url.hash}`;
     } catch {

@@ -29,9 +29,9 @@ browser → HA authenticated ingress → nginx :8099 → OpenDesign 127.0.0.1:74
                                                    ↘ system Chromium renderer
 ```
 
-nginx validates `X-Ingress-Path`, rewrites initial root-relative URLs, and injects an early browser shim covering fetch, XHR, EventSource, WebSocket, history, workers, and dynamically inserted asset URLs. Buffering and upstream compression are disabled to preserve streams and allow response rewriting.
+nginx validates `X-Ingress-Path`, rewrites initial root-relative URLs, and injects early browser shims covering fetch, XHR, EventSource, WebSocket, history, workers, dynamically inserted asset URLs, and the two web-mode export gaps. In HA Ingress the PDF action is redirected from the desktop-JSON endpoint to the binary screenshot-PDF endpoint, while PNG/JPEG saves call the daemon's headless image endpoint. Buffering and upstream compression are disabled to preserve streams and allow response rewriting.
 
-A PID-1 launcher starts nginx and OpenDesign, forwards termination, and stops the peer if either process exits. Both run as upstream `open-design` UID/GID 1001. nginx keeps its PID and temporary files under `/tmp`.
+A PID-1 launcher starts nginx and OpenDesign, forwards termination, and stops the peer if either process exits. Shutdown sends TERM, waits at most five seconds, then sends KILL and reaps. Both services run as upstream `open-design` UID/GID 1001. nginx keeps its PID and temporary files under `/tmp`.
 
 ## Development and validation
 
@@ -39,11 +39,13 @@ A PID-1 launcher starts nginx and OpenDesign, forwards termination, and stops th
 ./tests/run.sh
 ```
 
-The suite requires Node.js and Python 3 with PyYAML, but not Docker. It validates metadata, forbidden host/runtime coupling, JavaScript and shell syntax, renderer helpers, and ingress rewrite fixtures. Container and HAOS checks are performed only where the relevant tooling is available.
+The local suite requires Node.js and Python 3 with PyYAML, but not Docker. It validates metadata, forbidden host/runtime coupling, JavaScript and shell syntax, renderer/security helpers, export bridges, and ingress rewrite fixtures. CI additionally builds an amd64 image and runs `tests/container-smoke.sh` before the architecture publish matrix: real health polling, restart persistence, UID/path/CLI checks, Chromium PNG/JPEG rendering, editable-PPTX rejection, and upstream HTTP screenshot PDF/PPTX assembly.
 
 ## Security notes
 
 Access control is delegated to authenticated HA Ingress. Anyone allowed to open the add-on has OpenDesign access. Provider calls still leave the browser/daemon for the provider selected by the user. Browser-local keys do not follow a user to another browser and do not survive browser-storage clearing.
+
+Renderer HTML is model-generated, so Chromium applies a request policy before every load: it allows `data:`, `blob:`, `about:`, the exact OpenDesign loopback origin used for project assets, and public HTTP(S) addresses only after DNS/IP validation. It blocks Supervisor, metadata/link-local, RFC1918, CGNAT, other loopback ports, and IPv6 private/link-local destinations. System fonts keep CJK/emoji capture independent of remote font CDNs.
 
 ## Upstream and license
 

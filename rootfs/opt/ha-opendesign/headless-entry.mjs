@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { exportPdf, renderSlides } from './headless-renderer.mjs';
+import { renderSlides } from './headless-renderer.mjs';
 
 const host = '127.0.0.1';
 const port = 7456;
@@ -24,7 +24,6 @@ try {
     port,
     returnServer: true,
     desktopSlideRenderer: renderSlides,
-    desktopPdfExporter: exportPdf,
     desktopArtifactExporter: null,
   });
   console.info(`[ha-opendesign] OpenDesign ${started.url} with Playwright export renderer`);

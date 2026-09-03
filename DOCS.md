@@ -18,12 +18,14 @@ Projects, the OpenDesign database, application configuration, connector data, an
 |---|---|
 | Standalone HTML | Supported by OpenDesign |
 | Project ZIP | Supported by OpenDesign |
-| PNG / JPEG | Supported by the headless Chromium renderer |
-| Screenshot PDF | Supported; one image per deck slide or viewport page |
-| Screenshot PPTX | Supported; one full-slide image per PowerPoint slide |
-| Editable PPTX | **Unsupported**; select screenshot mode instead |
+| PNG / JPEG | Supported; the HA image dialog is bridged to `/export/image` |
+| Screenshot PDF | Supported; the HA PDF action is bridged to the binary `/export/pdf-image` download |
+| Screenshot PPTX | Supported; choose screenshot mode for one full-slide image per PowerPoint slide |
+| Editable PPTX | **Unsupported**; the renderer returns an explicit error |
 
-Rendering is bounded by time, dimensions, pixel count, and output-path confinement. CJK and color emoji fonts are installed in the image. Very tall pages can fail with a bounded-size error instead of exhausting add-on memory.
+The add-on does not inject the desktop vector-PDF exporter: upstream's browser client interprets that endpoint as a desktop save and would download nothing. The narrow HA bridge instead redirects the existing browser PDF request to the screenshot PDF endpoint and triggers a normal browser download. The image bridge intercepts only PNG/JPEG saves; other upstream browser formats retain their upstream behavior.
+
+Rendering is bounded by time, dimensions, pixel count, canonical output-path confinement, and a network policy. CJK and color emoji fonts are installed in the image. Very tall pages can fail with a bounded-size error instead of exhausting add-on memory. Renderer documents can load inline `data:`/`blob:` resources, project assets from the exact OpenDesign origin, and public HTTP(S) resources after DNS/IP validation. Supervisor, link-local, private, CGNAT, and other loopback destinations are blocked to keep model-authored HTML from reaching the HA network.
 
 ## Local runtimes
 

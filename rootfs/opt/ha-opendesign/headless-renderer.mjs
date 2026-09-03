@@ -1,5 +1,9 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { lookup } from 'node:dns/promises';
+import { mkdir, readFile, realpath } from 'node:fs/promises';
+import http from 'node:http';
+import https from 'node:https';
+import { isIP } from 'node:net';
 import path from 'node:path';
 
 const DEFAULT_WIDTH = 1440;
@@ -9,6 +13,7 @@ const MAX_DOCUMENT_HEIGHT = 30_000;
 const MAX_PIXELS = 120_000_000;
 const MAX_HTML_BYTES = 32 * 1024 * 1024;
 const RENDER_TIMEOUT_MS = 120_000;
+const MAX_REMOTE_ASSET_BYTES = 32 * 1024 * 1024;
 const SLIDE_SELECTOR = '.slide, [data-screen-label], .deck-slide, .ppt-slide';
 const CHROME_SELECTOR = '.progress-bar, .notes-overlay, aside.notes, .speaker-notes, .deck-nav, .deck-hint, .deck-counter';
 
@@ -72,8 +77,13 @@ export function validateRendererInput(value, options = {}) {
   if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
     throw new Error(`outputDir must be a child of ${exportRoot}`);
   }
-  if (value.baseHref != null && !isLoopbackHttpUrl(value.baseHref)) {
-    throw new Error('baseHref must be an HTTP(S) loopback URL');
+  if (value.baseHref != null) {
+    if (!isLoopbackHttpUrl(value.baseHref)) throw new Error('baseHref must be an HTTP(S) loopback URL');
+    const expectedDaemonOrigin = options.daemonOrigin
+      ?? `http://${process.env.OD_BIND_HOST ?? '127.0.0.1'}:${process.env.OD_PORT ?? '7456'}`;
+    if (new URL(value.baseHref).origin !== new URL(expectedDaemonOrigin).origin) {
+      throw new Error(`baseHref must use the exact OpenDesign daemon origin ${new URL(expectedDaemonOrigin).origin}`);
+    }
   }
   if (value.deck != null && typeof value.deck !== 'boolean') throw new Error('deck must be boolean');
   if (value.editable != null && typeof value.editable !== 'boolean') throw new Error('editable must be boolean');
@@ -124,9 +134,204 @@ function executablePath() {
   return found;
 }
 
-async function canonicalOutputDir(outputDir) {
+function isStrictChild(parent, candidate) {
+  const relative = path.relative(parent, candidate);
+  return Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+export async function canonicalizeOutputDir(outputDir, options = {}) {
+  const dataDir = path.resolve(options.dataDir ?? process.env.OD_DATA_DIR ?? '/data/opendesign');
+  const exportRoot = path.resolve(dataDir, 'export-render');
+  await mkdir(dataDir, { recursive: true });
+  await mkdir(exportRoot, { recursive: true });
   await mkdir(outputDir, { recursive: true });
-  return realpath(outputDir);
+  const [canonicalDataDir, canonicalExportRoot, canonicalOutputDir] = await Promise.all([
+    realpath(dataDir),
+    realpath(exportRoot),
+    realpath(outputDir),
+  ]);
+  if (!isStrictChild(canonicalDataDir, canonicalExportRoot)) {
+    throw new Error('canonical export root escapes OD_DATA_DIR');
+  }
+  if (!isStrictChild(canonicalExportRoot, canonicalOutputDir)) {
+    throw new Error('canonical outputDir escapes the export root');
+  }
+  return canonicalOutputDir;
+}
+
+function ipv4Number(address) {
+  const parts = address.split('.').map(Number);
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return null;
+  return (((parts[0] * 256 + parts[1]) * 256 + parts[2]) * 256 + parts[3]) >>> 0;
+}
+
+function inIpv4Cidr(value, base, bits) {
+  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+  return (value & mask) === (base & mask);
+}
+
+function ipv6Number(address) {
+  let normalized = address.toLowerCase().split('%')[0];
+  const dottedTail = /(?:^|:)(\d+\.\d+\.\d+\.\d+)$/.exec(normalized);
+  if (dottedTail) {
+    const value = ipv4Number(dottedTail[1]);
+    if (value == null) return null;
+    normalized = `${normalized.slice(0, dottedTail.index)}:${(value >>> 16).toString(16)}:${(value & 0xffff).toString(16)}`;
+  }
+  if ((normalized.match(/::/g) ?? []).length > 1) return null;
+  const [leftRaw, rightRaw] = normalized.split('::');
+  const left = leftRaw ? leftRaw.split(':') : [];
+  const right = rightRaw ? rightRaw.split(':') : [];
+  const omitted = normalized.includes('::') ? 8 - left.length - right.length : 0;
+  const groups = [...left, ...Array(Math.max(0, omitted)).fill('0'), ...right];
+  if (groups.length !== 8 || omitted < 0 || groups.some((group) => !/^[0-9a-f]{1,4}$/.test(group))) return null;
+  return groups.reduce((value, group) => (value << 16n) | BigInt(`0x${group}`), 0n);
+}
+
+function inIpv6Cidr(value, base, bits) {
+  const shift = 128n - BigInt(bits);
+  return (value >> shift) === (base >> shift);
+}
+
+export function classifyIpAddress(address) {
+  if (typeof address !== 'string') return 'invalid';
+  address = address.startsWith('[') && address.endsWith(']') ? address.slice(1, -1) : address;
+  const bareAddress = address.split('%')[0];
+  const version = isIP(bareAddress);
+  if (version === 4) {
+    const value = ipv4Number(bareAddress);
+    const blocked = [
+      ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8],
+      ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.0.2.0', 24],
+      ['192.168.0.0', 16], ['198.18.0.0', 15], ['198.51.100.0', 24], ['203.0.113.0', 24],
+      ['224.0.0.0', 4], ['240.0.0.0', 4],
+    ];
+    return blocked.some(([base, bits]) => inIpv4Cidr(value, ipv4Number(base), bits)) ? 'non-public' : 'public';
+  }
+  if (version === 6) {
+    const value = ipv6Number(bareAddress);
+    if (value == null) return 'invalid';
+    const mappedBase = ipv6Number('::ffff:0:0');
+    if (inIpv6Cidr(value, mappedBase, 96)) {
+      return classifyIpAddress([
+        Number((value >> 24n) & 0xffn), Number((value >> 16n) & 0xffn),
+        Number((value >> 8n) & 0xffn), Number(value & 0xffn),
+      ].join('.'));
+    }
+    const blocked = [
+      ['::', 128], ['::1', 128], ['::', 96], ['64:ff9b:1::', 48], ['100::', 64],
+      ['2001:2::', 48], ['2001:10::', 28], ['2001:db8::', 32], ['fc00::', 7],
+      ['fe80::', 10], ['fec0::', 10], ['ff00::', 8],
+    ];
+    return blocked.some(([base, bits]) => inIpv6Cidr(value, ipv6Number(base), bits)) ? 'non-public' : 'public';
+  }
+  return 'invalid';
+}
+
+export async function evaluateRequestPolicy(value, options) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return { allow: false, reason: 'invalid-url' };
+  }
+  if (['data:', 'blob:', 'about:'].includes(url.protocol)) return { allow: true, reason: 'local-document-scheme' };
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return { allow: false, reason: 'unsupported-scheme' };
+  if (url.username || url.password) return { allow: false, reason: 'url-credentials' };
+  if (options?.daemonOrigin && url.origin === options.daemonOrigin) return { allow: true, reason: 'exact-daemon-origin' };
+
+  const literalKind = classifyIpAddress(url.hostname);
+  if (literalKind === 'non-public') return { allow: false, reason: 'non-public-address' };
+  if (literalKind === 'public') {
+    const address = url.hostname.startsWith('[') && url.hostname.endsWith(']')
+      ? url.hostname.slice(1, -1)
+      : url.hostname;
+    options?.onValidatedAddresses?.([{ address, family: isIP(address) }]);
+    return options?.allowPublicHttpAssets === true
+      ? { allow: true, reason: 'validated-public-address' }
+      : { allow: false, reason: 'external-network-disabled' };
+  }
+
+  let addresses;
+  try {
+    addresses = await (options?.resolveHost ?? lookup)(url.hostname, { all: true, verbatim: true });
+  } catch {
+    return { allow: false, reason: 'dns-failed' };
+  }
+  if (!Array.isArray(addresses) || addresses.length === 0) return { allow: false, reason: 'dns-empty' };
+  if (addresses.some((entry) => classifyIpAddress(entry.address) !== 'public')) {
+    return { allow: false, reason: 'dns-non-public-address' };
+  }
+  options?.onValidatedAddresses?.(addresses);
+  return options?.allowPublicHttpAssets === true
+    ? { allow: true, reason: 'validated-public-dns' }
+    : { allow: false, reason: 'external-network-disabled' };
+}
+
+async function fulfillPinnedPublicRequest(route, address) {
+  const request = route.request();
+  const url = new URL(request.url());
+  const headers = { ...request.headers(), host: url.host };
+  delete headers.connection;
+  delete headers['content-length'];
+  delete headers['accept-encoding'];
+  const body = request.postDataBuffer();
+  const urlHostname = url.hostname.startsWith('[') && url.hostname.endsWith(']')
+    ? url.hostname.slice(1, -1)
+    : url.hostname;
+  await new Promise((resolve, reject) => {
+    const client = url.protocol === 'https:' ? https : http;
+    const outgoing = client.request({
+      family: address.family || isIP(address.address),
+      headers,
+      hostname: address.address,
+      method: request.method(),
+      path: `${url.pathname}${url.search}`,
+      port: url.port || undefined,
+      ...(url.protocol === 'https:' && !isIP(urlHostname) ? { servername: urlHostname } : {}),
+    }, (incoming) => {
+      const chunks = [];
+      let total = 0;
+      incoming.on('data', (chunk) => {
+        total += chunk.length;
+        if (total > MAX_REMOTE_ASSET_BYTES) {
+          incoming.destroy(new Error('remote renderer asset exceeds 32 MiB'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      incoming.on('error', reject);
+      incoming.on('end', async () => {
+        const responseHeaders = Object.fromEntries(Object.entries(incoming.headers)
+          .filter(([name, value]) => value != null
+            && !['connection', 'content-length', 'transfer-encoding'].includes(name))
+          .map(([name, value]) => [name, Array.isArray(value) ? value.join(', ') : value]));
+        try {
+          await route.fulfill({
+            body: Buffer.concat(chunks),
+            headers: responseHeaders,
+            status: incoming.statusCode ?? 502,
+          });
+          resolve();
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+    outgoing.setTimeout(15_000, () => outgoing.destroy(new Error('remote renderer asset timed out')));
+    outgoing.on('error', reject);
+    if (body) outgoing.write(body);
+    outgoing.end();
+  });
+}
+
+export function daemonOriginFromBaseHref(baseHref) {
+  if (!baseHref) return null;
+  try {
+    return new URL(baseHref).origin;
+  } catch {
+    return null;
+  }
 }
 
 function screenshotOptions(filepath, format) {
@@ -174,7 +379,14 @@ async function measureDeck(page, fallback) {
 
 async function stageSlide(page, index, size) {
   return page.evaluate(({ selector, chromeSelector, index, size }) => {
-    document.getElementById('__od_headless_capture_layer')?.remove();
+    const previousLayer = document.getElementById('__od_headless_capture_layer');
+    const previousPlaceholder = document.getElementById('__od_headless_capture_placeholder');
+    const previousSlide = previousLayer?.firstElementChild;
+    if (previousSlide && previousPlaceholder?.parentNode) {
+      previousPlaceholder.parentNode.insertBefore(previousSlide, previousPlaceholder);
+      previousPlaceholder.remove();
+    }
+    previousLayer?.remove();
     document.querySelectorAll(chromeSelector).forEach((element) => element.style.setProperty('display', 'none', 'important'));
     document.querySelectorAll('deck-stage, #deck-stage, .deck-stage').forEach((stage) => {
       stage.setAttribute('noscale', '');
@@ -194,6 +406,9 @@ async function stageSlide(page, index, size) {
     const layer = document.createElement('div');
     layer.id = '__od_headless_capture_layer';
     layer.style.cssText = `position:fixed!important;inset:0 auto auto 0!important;width:${size.width}px!important;height:${size.height}px!important;overflow:hidden!important;z-index:2147483647!important;background:${getComputedStyle(document.body).backgroundColor || '#fff'}!important`;
+    const placeholder = document.createElement('span');
+    placeholder.id = '__od_headless_capture_placeholder';
+    selected.parentNode?.insertBefore(placeholder, selected);
     selected.style.setProperty('position', 'absolute', 'important');
     selected.style.setProperty('inset', '0', 'important');
     selected.style.setProperty('margin', '0', 'important');
@@ -283,14 +498,44 @@ export async function renderSlides(rawInput) {
     if (input.editable === true) {
       return { ok: false, error: 'Editable PPTX is unsupported in the Home Assistant add-on; choose screenshot PPTX.', errorCode: 'RENDER_FAILED' };
     }
-    input.outputDir = await canonicalOutputDir(input.outputDir);
+    input.outputDir = await canonicalizeOutputDir(input.outputDir);
     const { chromium } = await import('playwright-core');
     browser = await chromium.launch({
       executablePath: executablePath(),
       headless: true,
       args: ['--no-sandbox', '--disable-dev-shm-usage', '--font-render-hinting=none'],
     });
-    const page = await browser.newPage({ viewport: { width: input.width, height: input.height } });
+    const context = await browser.newContext({
+      viewport: { width: input.width, height: input.height },
+      serviceWorkers: 'block',
+    });
+    const daemonOrigin = daemonOriginFromBaseHref(input.baseHref);
+    // Install the policy on the context before creating a page so workers and
+    // the first navigation of any model-opened popup cannot bypass it.
+    await context.route('**/*', async (route) => {
+      let validatedAddresses = [];
+      const policy = await evaluateRequestPolicy(route.request().url(), {
+        daemonOrigin,
+        allowPublicHttpAssets: true,
+        onValidatedAddresses: (addresses) => { validatedAddresses = addresses; },
+      });
+      if (!policy.allow) {
+        await route.abort('blockedbyclient');
+      } else if (policy.reason === 'validated-public-address' || policy.reason === 'validated-public-dns') {
+        // Connect to the address that was classified, while retaining the URL
+        // host for Host/SNI. Chromium must not perform a second, rebindable DNS
+        // lookup after policy approval.
+        try {
+          const address = validatedAddresses.find((entry) => entry.family === 4) ?? validatedAddresses[0];
+          await fulfillPinnedPublicRequest(route, address);
+        } catch {
+          await route.abort('failed').catch(() => {});
+        }
+      } else {
+        await route.continue();
+      }
+    });
+    const page = await context.newPage();
     page.setDefaultTimeout(15_000);
     page.setDefaultNavigationTimeout(15_000);
     page.on('dialog', (dialog) => dialog.dismiss().catch(() => {}));
@@ -303,34 +548,6 @@ export async function renderSlides(rawInput) {
     return mode === 'deck' ? await captureDeck(browser, page, input, count) : await capturePage(page, input);
   } catch (error) {
     return { ok: false, error: `headless renderer failed: ${error instanceof Error ? error.message : String(error)}`, errorCode: 'RENDER_FAILED' };
-  } finally {
-    clearTimeout(deadline);
-    await browser?.close().catch(() => {});
-  }
-}
-
-export async function exportPdf(input) {
-  let browser;
-  const deadline = setTimeout(() => void browser?.close().catch(() => {}), RENDER_TIMEOUT_MS);
-  deadline.unref?.();
-  try {
-    if (!input || typeof input.html !== 'string' || input.html.length === 0) throw new Error('html must be supplied');
-    if (input.baseHref != null && !isLoopbackHttpUrl(input.baseHref)) throw new Error('baseHref must be an HTTP(S) loopback URL');
-    const dataDir = path.resolve(process.env.OD_DATA_DIR ?? '/data/opendesign');
-    const outputDir = path.join(dataDir, 'export-pdf');
-    await mkdir(outputDir, { recursive: true });
-    const filepath = confinedOutputPath(outputDir, `vector-${Date.now()}-${process.pid}.pdf`);
-    const { chromium } = await import('playwright-core');
-    browser = await chromium.launch({ executablePath: executablePath(), headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
-    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-    page.setDefaultTimeout(15_000);
-    await page.setContent(injectBaseHref(input.html, input.baseHref), { waitUntil: 'domcontentloaded', timeout: 15_000 });
-    await settleDocument(page);
-    const pdf = await page.pdf({ printBackground: true, preferCSSPageSize: true, format: 'A4' });
-    await writeFile(filepath, pdf);
-    return { ok: true, path: filepath };
-  } catch (error) {
-    return { ok: false, error: `headless PDF export failed: ${error instanceof Error ? error.message : String(error)}` };
   } finally {
     clearTimeout(deadline);
     await browser?.close().catch(() => {});

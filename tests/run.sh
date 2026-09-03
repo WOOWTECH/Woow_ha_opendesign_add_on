@@ -8,18 +8,25 @@ for file in rootfs/opt/ha-opendesign/*.js rootfs/opt/ha-opendesign/*.mjs tests/*
   node --check "$file"
 done
 
-bash -n rootfs/usr/local/bin/ha-opendesign tests/run.sh
+bash -n rootfs/usr/local/bin/ha-opendesign tests/run.sh tests/container-smoke.sh
 node --test tests/*.test.mjs
 
 if command -v shellcheck >/dev/null 2>&1; then
-  shellcheck rootfs/usr/local/bin/ha-opendesign tests/run.sh
+  shellcheck rootfs/usr/local/bin/ha-opendesign tests/run.sh tests/container-smoke.sh
 else
   echo "shellcheck: SKIP (not installed)"
 fi
 
 if command -v nginx >/dev/null 2>&1; then
   mkdir -p /tmp/ha-opendesign-nginx/{client,proxy,fastcgi,uwsgi,scgi}
-  nginx -t -c "$PWD/rootfs/etc/nginx/nginx.conf"
+  nginx_test_config=$(mktemp)
+  trap 'rm -f "$nginx_test_config"' EXIT
+  sed -e 's#/dev/stderr#/tmp/ha-opendesign-nginx/error.log#' \
+      -e 's#/dev/stdout#/tmp/ha-opendesign-nginx/access.log#' \
+      rootfs/etc/nginx/nginx.conf >"$nginx_test_config"
+  nginx -t -c "$nginx_test_config"
+  rm -f "$nginx_test_config"
+  trap - EXIT
 else
   echo "nginx -t: SKIP (not installed)"
 fi

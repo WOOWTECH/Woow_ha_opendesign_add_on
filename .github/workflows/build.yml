@@ -35,8 +35,37 @@ jobs:
       - name: Validate
         run: ./tests/run.sh
 
-  build:
+  smoke:
     needs: validate
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build amd64 smoke image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: woow-ha-opendesign:smoke
+          build-args: |
+            BUILD_FROM=ghcr.io/nexu-io/od:0.21.1
+            BUILD_ARCH=amd64
+            BUILD_VERSION=0.1.0-smoke
+            BUILD_DESCRIPTION=OpenDesign 0.21.1 container smoke
+            BUILD_NAME=Woow HA OpenDesign
+            BUILD_REF=${{ github.sha }}
+            BUILD_REPOSITORY=${{ github.repository }}
+          cache-from: type=gha,scope=opendesign-smoke-amd64
+          cache-to: type=gha,scope=opendesign-smoke-amd64,mode=max
+      - name: Container, renderer, and HTTP export smoke
+        run: ./tests/container-smoke.sh woow-ha-opendesign:smoke
+
+  build:
+    needs: [validate, smoke]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false

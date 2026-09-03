@@ -11,7 +11,7 @@ function applyDocumentRewrites(html) {
     .replaceAll('href="/', `href="${prefix}/`)
     .replaceAll('src="/', `src="${prefix}/`)
     .replaceAll('action="/', `action="${prefix}/`)
-    .replace('<head>', `<head><script>window.__OD_INGRESS_PATH__="${prefix}";</script><script src="${prefix}/ha-ingress.js"></script>`);
+    .replace('<head>', `<head><script>window.__OD_INGRESS_PATH__="${prefix}";</script><script src="${prefix}/ha-ingress.js"></script><script src="${prefix}/ha-export-bridge.js"></script>`);
 }
 
 test('representative initial HTML rewrite matches the fixture', async () => {
@@ -31,6 +31,8 @@ test('nginx validates the ingress prefix and preserves streaming upgrades', () =
   assert.match(nginx, /proxy_set_header Accept-Encoding ""/);
   assert.match(nginx, /client_max_body_size 256M/);
   assert.match(nginx, /location ~ \^\/api\/projects\/\[\^\/\]\+\/export/);
+  assert.match(nginx, /location = \/ha-export-bridge\.js/);
+  assert.match(nginx, /ha-ingress\.js.*ha-export-bridge\.js/);
   assert.ok(nginx.indexOf("sub_filter '<head>'") > nginx.indexOf("location /"));
   assert.ok(nginx.indexOf('location ~ ^/api/projects/') < nginx.indexOf('location / {'), 'download bypass must precede the filtered shell location');
 });
@@ -48,5 +50,7 @@ test('early shim covers root-relative streaming, navigation, and dynamic URLs', 
     "wrapWorker('Worker')",
   ]) assert.ok(shim.includes(token), `missing shim behavior: ${token}`);
   assert.ok(shim.includes("startsWith('/api/hassio_ingress/')"), 'must prevent ingress double-prefixing');
+  assert.match(shim, /url\.protocol !== 'http:' && url\.protocol !== 'https:'/,
+    'blob/data/about URLs used by browser downloads must not be ingress-rewritten');
   assert.ok(shim.includes('Service workers are disabled'), 'must not register a root-scoped service worker on HA');
 });

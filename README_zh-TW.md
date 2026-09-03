@@ -29,9 +29,9 @@
                                                ↘ 系統 Chromium renderer
 ```
 
-nginx 先驗證 `X-Ingress-Path`，改寫初始回應中的根路徑 URL，並在應用程式碼之前注入 shim，以處理 fetch、XHR、EventSource、WebSocket、history、worker 與動態資源 URL。SSE／WebSocket 不緩衝，且對上游停用壓縮以便安全改寫。
+nginx 先驗證 `X-Ingress-Path`，改寫初始回應中的根路徑 URL，並在應用程式碼之前注入 shim，以處理 fetch、XHR、EventSource、WebSocket、history、worker、動態資源 URL 與 web 模式的匯出缺口。HA Ingress 的 PDF 操作會改走可下載的截圖 PDF 二進位端點，PNG/JPEG 儲存則直接呼叫 daemon 的無頭 image 端點。SSE／WebSocket 不緩衝，且對上游停用壓縮以便安全改寫。
 
-PID 1 啟動器同時管理 nginx 與 OpenDesign；任一程序退出時會停止另一個並讓 Supervisor 重新啟動。兩者都以 OpenDesign 的 UID/GID 1001 執行，nginx PID 與暫存目錄位於 `/tmp`。
+PID 1 啟動器同時管理 nginx 與 OpenDesign；任一程序退出時會停止另一個並讓 Supervisor 重新啟動。關閉時先送 TERM、最多等待五秒，再送 KILL 並回收程序。兩者都以 OpenDesign 的 UID/GID 1001 執行，nginx PID 與暫存目錄位於 `/tmp`。
 
 ## 驗證
 
@@ -39,7 +39,11 @@ PID 1 啟動器同時管理 nginx 與 OpenDesign；任一程序退出時會停�
 ./tests/run.sh
 ```
 
-測試不需要 Docker；會檢查 YAML、禁止的主機／本機執行環境耦合、JavaScript 與 shell 語法、renderer 純函式及 Ingress 改寫 fixture。容器與 HAOS 實機驗證只在具有相應工具的環境執行。
+本機測試不需要 Docker；會檢查 YAML、禁止的主機／本機執行環境耦合、JavaScript 與 shell 語法、renderer／網路安全純函式、匯出 bridge 及 Ingress fixture。CI 會先實際建置 amd64 映像，驗證健康檢查、重啟持久性、UID／路徑／CLI 缺席、Chromium PNG/JPEG、可編輯 PPTX 拒絕，以及 HTTP 截圖 PDF/PPTX 組裝，通過後才執行發布矩陣。
+
+## 安全性
+
+模型產生的 HTML 在套用請求政策的 renderer Chromium 中執行。允許 `data:`、`blob:`、`about:`、精確的 OpenDesign loopback origin，以及通過 DNS／IP 驗證的公共 HTTP(S)；Supervisor、link-local、RFC1918、CGNAT、其他 loopback 連接埠及 IPv6 私有／link-local 位址都會被拒絕。CJK／emoji 使用映像內建字型，不依賴遠端字型 CDN。
 
 ## 授權
 

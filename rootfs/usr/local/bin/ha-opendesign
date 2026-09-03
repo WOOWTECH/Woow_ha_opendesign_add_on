@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 readonly DATA_DIR=/data/opendesign
 readonly NGINX_TMP=/tmp/ha-opendesign-nginx
+readonly SHUTDOWN_GRACE_SECONDS=5
 od_pid=''
 nginx_pid=''
 stopping=0
@@ -13,9 +14,29 @@ terminate_children() {
   fi
   stopping=1
   trap - TERM INT
+  local pid deadline
   for pid in "$od_pid" "$nginx_pid"; do
     if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
       kill -TERM "$pid" 2>/dev/null || true
+    fi
+  done
+
+  deadline=$((SECONDS + SHUTDOWN_GRACE_SECONDS))
+  while (( SECONDS < deadline )); do
+    local alive=0
+    for pid in "$od_pid" "$nginx_pid"; do
+      if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+        alive=1
+      fi
+    done
+    (( alive == 0 )) && break
+    sleep 0.1
+  done
+
+  for pid in "$od_pid" "$nginx_pid"; do
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      echo "[ha-opendesign] process $pid exceeded ${SHUTDOWN_GRACE_SECONDS}s grace; sending KILL" >&2
+      kill -KILL "$pid" 2>/dev/null || true
     fi
   done
   for pid in "$od_pid" "$nginx_pid"; do

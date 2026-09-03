@@ -43,12 +43,16 @@ check(package.get("dependencies") == {"playwright-core": "1.55.0"}, "renderer de
 dockerfile = (ROOT / "Dockerfile").read_text()
 launcher = (ROOT / "rootfs/usr/local/bin/ha-opendesign").read_text()
 entry = (ROOT / "rootfs/opt/ha-opendesign/headless-entry.mjs").read_text()
+renderer = (ROOT / "rootfs/opt/ha-opendesign/headless-renderer.mjs").read_text()
+export_bridge = (ROOT / "rootfs/opt/ha-opendesign/ha-export-bridge.js").read_text()
 nginx = (ROOT / "rootfs/etc/nginx/nginx.conf").read_text()
 workflow_text = (ROOT / ".github/workflows/build.yml").read_text()
 runtime_sources = "\n".join([
     dockerfile,
     launcher,
     entry,
+    renderer,
+    export_bridge,
     nginx,
     (ROOT / "runtime/package.json").read_text(),
 ])
@@ -61,12 +65,20 @@ check("USER open-design" in dockerfile, "final runtime user must be open-design 
 for expected in ["chromium", "font-noto-cjk", "font-noto-emoji", "fontconfig", "nginx"]:
     check(expected in dockerfile, f"expected image package missing: {expected}")
 check("npm ci --omit=dev" in dockerfile, "locked production npm install required")
-check("startServer" in entry and "desktopSlideRenderer: renderSlides" in entry and "desktopPdfExporter: exportPdf" in entry, "export renderer injection missing")
+check("startServer" in entry and "desktopSlideRenderer: renderSlides" in entry, "slide renderer injection missing")
+check("desktopPdfExporter" not in entry and "exportPdf" not in entry, "misleading desktop vector PDF exporter must not be injected")
 check("host = '127.0.0.1'" in entry, "OpenDesign entry must bind loopback")
 check("wait -n" in launcher and "terminate_children" in launcher, "two-process watchdog launcher missing")
+check("SHUTDOWN_GRACE_SECONDS" in launcher and "kill -KILL" in launcher, "bounded TERM-to-KILL shutdown missing")
+check("canonicalizeOutputDir" in renderer and "canonical outputDir escapes" in renderer, "canonical output confinement missing")
+check("evaluateRequestPolicy" in renderer and "allowPublicHttpAssets: true" in renderer, "renderer network policy missing")
+check("context.route" in renderer and "serviceWorkers: 'block'" in renderer, "renderer policy must cover popups/workers")
+check("--disable-web-security" not in renderer, "renderer must not disable browser web security")
+check("redirectPdfRequest" in export_bridge and "/export/image" in export_bridge, "browser PDF/image export bridge missing")
 check("proxy_pass http://127.0.0.1:7456" in nginx, "nginx may only forward to loopback OpenDesign")
 check("/tmp/ha-opendesign-nginx" in nginx, "unprivileged nginx temp paths missing")
-check("needs: validate" in workflow_text, "architecture builds must depend on validation")
+check("needs: [validate, smoke]" in workflow_text, "publish matrix must depend on validation and container smoke")
+check("container-smoke.sh" in workflow_text and "load: true" in workflow_text, "real amd64 container smoke lane missing")
 check("linux/amd64" in workflow_text and "linux/arm64" in workflow_text, "CI architecture matrix is incomplete")
 check("ghcr.io/woowtech/woow-ha-opendesign-${{ matrix.arch }}" in workflow_text, "CI GHCR architecture image name mismatch")
 check("latest" not in workflow_text.lower(), "CI must not publish a latest tag")
