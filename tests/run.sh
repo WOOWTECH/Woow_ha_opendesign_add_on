@@ -3,16 +3,17 @@ set -Eeuo pipefail
 cd "$(dirname "$0")/.."
 
 python3 tests/validate.py
+python3 tests/workflow-policy.test.py
 
 for file in rootfs/opt/ha-opendesign/*.js rootfs/opt/ha-opendesign/*.mjs tests/*.mjs; do
   node --check "$file"
 done
 
-bash -n rootfs/usr/local/bin/ha-opendesign tests/run.sh tests/container-smoke.sh
+bash -n rootfs/usr/local/bin/ha-opendesign .github/scripts/release-preflight.sh tests/run.sh tests/container-smoke.sh
 node --test tests/*.test.mjs
 
 if command -v shellcheck >/dev/null 2>&1; then
-  shellcheck rootfs/usr/local/bin/ha-opendesign tests/run.sh tests/container-smoke.sh
+  shellcheck rootfs/usr/local/bin/ha-opendesign .github/scripts/release-preflight.sh tests/run.sh tests/container-smoke.sh
 else
   echo "shellcheck: SKIP (not installed)"
 fi

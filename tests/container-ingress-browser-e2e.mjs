@@ -8,6 +8,7 @@ const prefix = '/api/hassio_ingress/abcdefghijklmnop';
 const upstreamPort = Number(process.env.OD_INGRESS_PORT || 8099);
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || '/usr/bin/chromium-browser';
 const publicRequests = [];
+const forwardedRequests = [];
 
 const proxy = http.createServer((request, response) => {
   publicRequests.push(request.url);
@@ -43,6 +44,10 @@ const proxy = http.createServer((request, response) => {
   }, (upstreamResponse) => {
     response.writeHead(upstreamResponse.statusCode || 502, upstreamResponse.headers);
     upstreamResponse.pipe(response);
+  });
+  forwardedRequests.push({
+    path: stripped,
+    requestProof: upstream.getHeader('x-request-proof'),
   });
   upstream.on('error', (error) => response.destroy(error));
   request.pipe(upstream);
@@ -155,9 +160,13 @@ try {
     assert.ok(publicRequests.includes(`${prefix}/__ha_probe/${probePath}`), `${probePath} did not traverse the public HA prefix`);
   }
   assert.ok(publicRequests.some((value) => value.startsWith(`${prefix}/api/projects/ha-smoke/export/pdf-image`)));
+  assert.ok(forwardedRequests.some(({ path: requestPath, requestProof }) => (
+    requestPath.startsWith('/api/projects/ha-smoke/export/pdf-image')
+      && requestProof === 'browser-request'
+  )), 'PDF Request headers must survive the Supervisor-style path-stripping proxy');
   assert.ok(publicRequests.some((value) => value.startsWith(`${prefix}/api/projects/ha-smoke/export/image`)));
   assert.ok(downloads.length >= 2);
-  console.log('container browser ingress e2e: built UI injection, path stripping, fetch/XHR/SSE/WebSocket, PDF Request, and image action passed');
+  console.log('container browser ingress e2e: built UI injection, path stripping, fetch/XHR/SSE/WebSocket, PDF Request headers, and image action passed');
 } finally {
   await browser?.close().catch(() => {});
   await new Promise((resolve) => proxy.close(resolve));

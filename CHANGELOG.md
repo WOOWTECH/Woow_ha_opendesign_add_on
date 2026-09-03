@@ -17,3 +17,6 @@
 - Preserve complete `Request` semantics when redirecting browser PDF exports.
 - Exercise injected ingress/export scripts in Chromium through a Supervisor-style path-stripping proxy, including fetch, XHR, SSE, WebSocket, PDF, and image actions.
 - Pin the upstream multi-architecture image by digest, pin GitHub Actions by commit, explicitly install/check bash, and publish architecture version tags only from an exactly matching release tag.
+- Split non-release builds from release publishing so PR/main jobs retain only `contents: read`; add a release-only, fail-closed GHCR preflight that prevents overwriting either architecture version tag. Partial releases now require a version bump.
+- Hold the remote-resource semaphore across DNS policy evaluation and pinned fetch completion, with an instrumented resolver-concurrency regression test.
+- Assert in the Chromium ingress smoke that custom `Request` headers survive the Supervisor-style proxy during PDF export.

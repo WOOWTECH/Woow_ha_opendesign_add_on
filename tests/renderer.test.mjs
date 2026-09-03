@@ -16,6 +16,7 @@ import {
   isLoopbackHttpUrl,
   planCapture,
   RENDER_LIMITS,
+  routeRendererRequest,
   runWithAbsoluteDeadline,
   Semaphore,
   validateRendererInput,
@@ -215,6 +216,46 @@ test('semaphore caps concurrency and releases queued jobs', async () => {
   }));
   assert.deepEqual(await Promise.all(jobs), [0, 1, 2, 3, 4, 5, 6, 7]);
   assert.equal(peak, 2);
+});
+
+test('remote-resource permits bound DNS resolution through pinned fetch completion', async () => {
+  const remoteResources = new Semaphore(2);
+  let activeResolvers = 0;
+  let peakResolvers = 0;
+  let resolverStarts = 0;
+  let fetchStarts = 0;
+  let releaseFetch;
+  const fetchGate = new Promise((resolve) => { releaseFetch = resolve; });
+  const resolveHost = async () => {
+    resolverStarts += 1;
+    activeResolvers += 1;
+    peakResolvers = Math.max(peakResolvers, activeResolvers);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    activeResolvers -= 1;
+    return [{ address: '93.184.216.34', family: 4 }];
+  };
+  const jobs = Array.from({ length: 8 }, (_value, index) => routeRendererRequest({
+    request: () => ({ url: () => `https://asset-${index}.example/image.png` }),
+    abort: async () => { throw new Error('public test request was unexpectedly blocked'); },
+    continue: async () => { throw new Error('public test request unexpectedly bypassed pinned fetch'); },
+  }, {
+    fulfillRequest: async (_route, address) => {
+      assert.equal(address.address, '93.184.216.34');
+      fetchStarts += 1;
+      await fetchGate;
+    },
+    remoteBudget: createByteBudget(1024, 'resolver test budget'),
+    remoteResources,
+    resolveHost,
+  }));
+  while (fetchStarts < 2) await new Promise((resolve) => setTimeout(resolve, 1));
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(resolverStarts, 2, 'queued requests must not resolve DNS while fetch permits are held');
+  assert.equal(peakResolvers, 2, 'resolver concurrency must match the remote-resource limit');
+  releaseFetch();
+  const policies = await Promise.all(jobs);
+  assert.equal(resolverStarts, 8);
+  assert.ok(policies.every((policy) => policy.reason === 'validated-public-dns'));
 });
 
 test('absolute deadline aborts work even when it remains active', async () => {

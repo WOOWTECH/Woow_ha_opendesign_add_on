@@ -39,11 +39,11 @@ PID 1 啟動器同時管理 nginx 與 OpenDesign；任一程序退出時會停�
 ./tests/run.sh
 ```
 
-本機測試不需要 Docker；會檢查 YAML、禁止的主機／本機執行環境耦合、JavaScript 與 shell 語法、renderer／網路安全純函式、匯出 bridge 及 Ingress fixture。CI 會先實際建置 amd64 映像，透過模擬 Supervisor 路徑剝除的代理在 Chromium 中執行注入腳本與 fetch／XHR／SSE／WebSocket、PDF／圖片操作，並驗證健康檢查、持久性、renderer 與 HTTP 匯出。amd64／aarch64 映像只在 Git 標籤與 `config.yaml` 版本完全相符時發布。
+本機測試不需要 Docker；會檢查 YAML、禁止的主機／本機執行環境耦合、JavaScript 與 shell 語法、renderer／網路安全純函式、匯出 bridge、Ingress fixture，以及 CI 的最小權限與不可變發布政策。CI 會先實際建置 amd64 映像，透過模擬 Supervisor 路徑剝除的代理在 Chromium 中執行注入腳本與 fetch／XHR／SSE／WebSocket、PDF／圖片操作，並驗證健康檢查、持久性、renderer 與 HTTP 匯出。PR／main 建置只有 `contents: read` 權限且不登入 GHCR；amd64／aarch64 映像只在 Git 標籤與 `config.yaml` 版本完全相符、且預檢確認兩個版本標籤都不存在時發布。已發布版本不可覆寫；若只成功發布其中一個架構，必須提升 `config.yaml` 版本並建立新的相符標籤。
 
 ## 安全性
 
-模型產生的 HTML 在套用請求政策的 renderer Chromium 中執行。允許 `data:`、`blob:`、`about:`、精確的 OpenDesign loopback origin，以及通過 DNS／IP 驗證並固定連線位址的公共 HTTP(S)。所有 WebSocket 與 Supervisor、link-local、RFC1918、CGNAT、其他 loopback 連接埠及 IPv6 私有／link-local 位址都會被拒絕。render 工作採單工執行，並受絕對期限、64 張投影片、總像素／輸出位元組，以及遠端資源並行數／位元組上限約束。CJK／emoji 使用映像內建字型，不依賴遠端字型 CDN。
+模型產生的 HTML 在套用請求政策的 renderer Chromium 中執行。允許 `data:`、`blob:`、`about:`、精確的 OpenDesign loopback origin，以及通過 DNS／IP 驗證並固定連線位址的公共 HTTP(S)。所有 WebSocket 與 Supervisor、link-local、RFC1918、CGNAT、其他 loopback 連接埠及 IPv6 私有／link-local 位址都會被拒絕。render 工作採單工執行，並受絕對期限、64 張投影片、總像素／輸出位元組、涵蓋 DNS 驗證到固定連線抓取完成的共用遠端資源 semaphore，以及遠端總位元組上限約束。CJK／emoji 使用映像內建字型，不依賴遠端字型 CDN。
 
 ## 授權
 

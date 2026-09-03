@@ -17,6 +17,8 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -31,22 +33,14 @@ jobs:
           python3 -m pip install --break-system-packages PyYAML==6.0.2
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends nginx shellcheck
-      - name: Validate release tag
-        if: github.ref_type == 'tag'
-        shell: bash
-        run: |
-          version=$(awk -F'"' '/^version:/ { print $2 }' config.yaml)
-          expected="v${version}"
-          if [[ "${GITHUB_REF_NAME}" != "${expected}" ]]; then
-            echo "Release tag ${GITHUB_REF_NAME} does not match config.yaml version ${expected}" >&2
-            exit 1
-          fi
       - name: Validate
         run: ./tests/run.sh
 
   smoke:
     needs: validate
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -72,13 +66,77 @@ jobs:
             BUILD_NAME=Woow HA OpenDesign
             BUILD_REF=${{ github.sha }}
             BUILD_REPOSITORY=${{ github.repository }}
-          cache-from: type=gha,scope=opendesign-smoke-amd64
-          cache-to: type=gha,scope=opendesign-smoke-amd64,mode=max
+          cache-from: type=gha,scope=opendesign-amd64
+          cache-to: type=gha,scope=opendesign-amd64,mode=max
       - name: Container, renderer, and browser ingress smoke
         run: ./tests/container-smoke.sh woow-ha-opendesign:smoke
 
-  build:
+  build-nonrelease:
+    if: github.ref_type != 'tag'
     needs: [validate, smoke]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: aarch64
+            platform: linux/arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Read add-on version
+        id: metadata
+        shell: bash
+        run: echo "version=$(awk -F'\"' '/^version:/ { print $2 }' config.yaml)" >> "$GITHUB_OUTPUT"
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@53851d14592bedcffcf25ea515637cff71ef929a # v3.3.0
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Build architecture image without publishing
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: false
+          provenance: false
+          tags: ghcr.io/woowtech/woow-ha-opendesign-${{ matrix.arch }}:${{ steps.metadata.outputs.version }}
+          build-args: |
+            BUILD_FROM=ghcr.io/nexu-io/od:0.21.1@sha256:441daca881e699657bacf28e0c27b16cd6be551dfff4bd63368dd74bec581f39
+            BUILD_ARCH=${{ matrix.arch }}
+            BUILD_VERSION=${{ steps.metadata.outputs.version }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
+            BUILD_DESCRIPTION=OpenDesign 0.21.1 for Home Assistant Ingress
+            BUILD_NAME=Woow HA OpenDesign
+            BUILD_REF=${{ github.sha }}
+            BUILD_REPOSITORY=${{ github.repository }}
+          cache-from: type=gha,scope=opendesign-${{ matrix.arch }}
+          cache-to: type=gha,scope=opendesign-${{ matrix.arch }},mode=max
+
+  release-preflight:
+    if: github.ref_type == 'tag'
+    needs: [validate, smoke]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Enforce immutable release version
+        env:
+          GITHUB_REF_TYPE: ${{ github.ref_type }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GHCR_ACTOR: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./.github/scripts/release-preflight.sh
+
+  publish-release:
+    if: github.ref_type == 'tag'
+    needs: [validate, smoke, release-preflight]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -94,34 +152,26 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Read release metadata
+      - name: Read add-on version
         id: metadata
         shell: bash
-        run: |
-          version=$(awk -F'"' '/^version:/ { print $2 }' config.yaml)
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == "v${version}" ]]; then
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-          fi
+        run: echo "version=$(awk -F'\"' '/^version:/ { print $2 }' config.yaml)" >> "$GITHUB_OUTPUT"
       - name: Set up QEMU
         uses: docker/setup-qemu-action@53851d14592bedcffcf25ea515637cff71ef929a # v3.3.0
       - name: Set up Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
       - name: Log in to GHCR
-        if: steps.metadata.outputs.publish == 'true'
         uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build architecture image
+      - name: Build and publish immutable architecture image
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
           context: .
           platforms: ${{ matrix.platform }}
-          push: ${{ steps.metadata.outputs.publish == 'true' }}
+          push: true
           provenance: false
           tags: ghcr.io/woowtech/woow-ha-opendesign-${{ matrix.arch }}:${{ steps.metadata.outputs.version }}
           build-args: |

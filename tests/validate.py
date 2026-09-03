@@ -81,13 +81,11 @@ check("--disable-web-security" not in renderer, "renderer must not disable brows
 check("redirectPdfRequest" in export_bridge and "/export/image" in export_bridge, "browser PDF/image export bridge missing")
 check("proxy_pass http://127.0.0.1:7456" in nginx, "nginx may only forward to loopback OpenDesign")
 check("/tmp/ha-opendesign-nginx" in nginx, "unprivileged nginx temp paths missing")
-check("needs: [validate, smoke]" in workflow_text, "publish matrix must depend on validation and container smoke")
 check("container-smoke.sh" in workflow_text and "load: true" in workflow_text, "real amd64 container smoke lane missing")
 check("linux/amd64" in workflow_text and "linux/arm64" in workflow_text, "CI architecture matrix is incomplete")
 check("ghcr.io/woowtech/woow-ha-opendesign-${{ matrix.arch }}" in workflow_text, "CI GHCR architecture image name mismatch")
 check("latest" not in workflow_text.lower(), "CI must not publish a latest tag")
 check(workflow.get("permissions") == {"contents": "read"}, "top-level workflow permissions must be contents:read only")
-check("github.ref_type == 'tag'" in workflow_text and "steps.metadata.outputs.publish == 'true'" in workflow_text, "publishing must be restricted to a matching release tag")
 check(upstream_image in workflow_text, "workflow build inputs must pin the approved upstream digest")
 for action_ref in re.findall(r"uses:\s*[^\s]+@([^\s#]+)", workflow_text):
     check(bool(re.fullmatch(r"[0-9a-f]{40}", action_ref)), f"GitHub Action is not pinned to a full commit SHA: {action_ref}")

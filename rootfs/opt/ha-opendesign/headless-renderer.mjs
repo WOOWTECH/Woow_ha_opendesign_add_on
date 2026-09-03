@@ -529,6 +529,45 @@ async function fulfillPinnedPublicRequest(route, address, { signal, totalBudget 
   });
 }
 
+export async function routeRendererRequest(route, options) {
+  const {
+    daemonOrigin,
+    fulfillRequest = fulfillPinnedPublicRequest,
+    remoteBudget,
+    remoteResources,
+    resolveHost,
+    signal,
+  } = options;
+  if (!remoteResources || typeof remoteResources.run !== 'function') {
+    throw new Error('remote resource semaphore is required');
+  }
+  // A single permit covers DNS resolution, policy evaluation, and the pinned
+  // fetch. Hostile documents therefore cannot queue unbounded resolver work
+  // while all of the fetch permits are occupied.
+  return remoteResources.run(async () => {
+    let validatedAddresses = [];
+    const policy = await evaluateRequestPolicy(route.request().url(), {
+      daemonOrigin,
+      allowPublicHttpAssets: true,
+      resolveHost,
+      signal,
+      onValidatedAddresses: (addresses) => { validatedAddresses = addresses; },
+    });
+    if (!policy.allow) {
+      await route.abort('blockedbyclient');
+    } else if (policy.reason === 'validated-public-address' || policy.reason === 'validated-public-dns') {
+      // Connect to the address that was classified, while retaining the URL
+      // host for Host/SNI. Chromium must not perform a second, rebindable DNS
+      // lookup after policy approval.
+      const address = validatedAddresses.find((entry) => entry.family === 4) ?? validatedAddresses[0];
+      await fulfillRequest(route, address, { signal, totalBudget: remoteBudget });
+    } else {
+      await route.continue();
+    }
+    return policy;
+  }, signal);
+}
+
 export function daemonOriginFromBaseHref(baseHref) {
   if (!baseHref) return null;
   try {
@@ -758,27 +797,12 @@ async function renderSlidesExclusive(rawInput, signal) {
     // the first navigation of any model-opened popup cannot bypass it.
     await context.route('**/*', async (route) => {
       try {
-        let validatedAddresses = [];
-        const policy = await evaluateRequestPolicy(route.request().url(), {
+        await routeRendererRequest(route, {
           daemonOrigin,
-          allowPublicHttpAssets: true,
+          remoteBudget,
+          remoteResources: remoteFetches,
           signal,
-          onValidatedAddresses: (addresses) => { validatedAddresses = addresses; },
         });
-        if (!policy.allow) {
-          await route.abort('blockedbyclient');
-        } else if (policy.reason === 'validated-public-address' || policy.reason === 'validated-public-dns') {
-          // Connect to the address that was classified, while retaining the URL
-          // host for Host/SNI. Chromium must not perform a second, rebindable DNS
-          // lookup after policy approval.
-          const address = validatedAddresses.find((entry) => entry.family === 4) ?? validatedAddresses[0];
-          await remoteFetches.run(
-            () => fulfillPinnedPublicRequest(route, address, { signal, totalBudget: remoteBudget }),
-            signal,
-          );
-        } else {
-          await route.continue();
-        }
       } catch {
         await route.abort('failed').catch(() => {});
       }
