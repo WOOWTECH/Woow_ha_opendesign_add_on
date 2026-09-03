@@ -28,3 +28,4 @@
 - Harden the container browser harness against dangling proxy sockets and verify fixture creation through OpenDesign's file API plus real two-color deck output.
 - Reject symbolic links during privileged `/data` preparation and use no-follow ownership changes, preventing persisted state from redirecting root startup operations outside the add-on data tree.
 - Make the CI browser smoke observe blob-anchor clicks instead of unreliable GitHub-hosted Playwright download events; binary endpoint checks and HAOS acceptance still verify real downloaded files.
+- Serialize browser-bridge and renderer Chromium acceptance on small CI runners: deterministic binary stubs verify the bridge first, then real image/PDF/PPTX endpoints run after the browser exits.

@@ -30,6 +30,30 @@ const proxy = http.createServer((request, response) => {
     response.end('data: ingress-sse\n\n');
     return;
   }
+  // Keep the UI-bridge browser and the real renderer Chromium serial on small
+  // CI runners. These deterministic binary stubs validate the browser bridge,
+  // path stripping, headers and blob-anchor behavior; container-smoke.sh calls
+  // the real image/PDF/PPTX endpoints immediately after this browser exits.
+  if (request.method === 'POST' && stripped.endsWith('/export/pdf-image')) {
+    forwardedRequests.push({ path: stripped, requestProof: request.headers['x-request-proof'] });
+    request.resume();
+    response.writeHead(200, {
+      'content-type': 'application/pdf',
+      'content-disposition': 'attachment; filename="browser-smoke.pdf"',
+    });
+    response.end('%PDF-1.4\n%%EOF\n');
+    return;
+  }
+  if (request.method === 'POST' && stripped.endsWith('/export/image')) {
+    forwardedRequests.push({ path: stripped, requestProof: request.headers['x-request-proof'] });
+    request.resume();
+    response.writeHead(200, {
+      'content-type': 'image/png',
+      'content-disposition': 'attachment; filename="browser-smoke.png"',
+    });
+    response.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'));
+    return;
+  }
 
   const upstream = http.request({
     hostname: '127.0.0.1',
