@@ -622,14 +622,7 @@ async function measureDeck(page, fallback) {
 
 async function stageSlide(page, index, size) {
   return page.evaluate(({ selector, chromeSelector, index, size }) => {
-    const previousLayer = document.getElementById('__od_headless_capture_layer');
-    const previousPlaceholder = document.getElementById('__od_headless_capture_placeholder');
-    const previousSlide = previousLayer?.firstElementChild;
-    if (previousSlide && previousPlaceholder?.parentNode) {
-      previousPlaceholder.parentNode.insertBefore(previousSlide, previousPlaceholder);
-      previousPlaceholder.remove();
-    }
-    previousLayer?.remove();
+    document.getElementById('__od_headless_capture_layer')?.remove();
     document.querySelectorAll(chromeSelector).forEach((element) => element.style.setProperty('display', 'none', 'important'));
     document.querySelectorAll('deck-stage, #deck-stage, .deck-stage').forEach((stage) => {
       stage.setAttribute('noscale', '');
@@ -649,16 +642,26 @@ async function stageSlide(page, index, size) {
     const layer = document.createElement('div');
     layer.id = '__od_headless_capture_layer';
     layer.style.cssText = `position:fixed!important;inset:0 auto auto 0!important;width:${size.width}px!important;height:${size.height}px!important;overflow:hidden!important;z-index:2147483647!important;background:${getComputedStyle(document.body).backgroundColor || '#fff'}!important`;
-    const placeholder = document.createElement('span');
-    placeholder.id = '__od_headless_capture_placeholder';
-    selected.parentNode?.insertBefore(placeholder, selected);
-    selected.style.setProperty('position', 'absolute', 'important');
-    selected.style.setProperty('inset', '0', 'important');
-    selected.style.setProperty('margin', '0', 'important');
-    selected.style.setProperty('transform', 'none', 'important');
-    selected.style.setProperty('width', `${size.width}px`, 'important');
-    selected.style.setProperty('height', `${size.height}px`, 'important');
-    layer.appendChild(selected);
+    // Keep all slide siblings in the capture layer so structural selectors such
+    // as :first-of-type/:last-of-type retain their authored meaning. Moving only
+    // the selected slide made every capture match both selectors and duplicated
+    // the last slide's styling across a deck.
+    slides.forEach((slide, current) => {
+      const active = current === index;
+      const clone = slide.cloneNode(true);
+      ['active', 'visible', 'is-active', 'current'].forEach((name) => clone.classList.toggle(name, active));
+      clone.toggleAttribute('data-od-deck-active', active);
+      clone.style.setProperty('display', 'block', 'important');
+      clone.style.setProperty('position', 'absolute', 'important');
+      clone.style.setProperty('inset', '0', 'important');
+      clone.style.setProperty('margin', '0', 'important');
+      clone.style.setProperty('transform', 'none', 'important');
+      clone.style.setProperty('width', `${size.width}px`, 'important');
+      clone.style.setProperty('height', `${size.height}px`, 'important');
+      clone.style.setProperty('visibility', active ? 'visible' : 'hidden', 'important');
+      clone.style.setProperty('opacity', active ? '1' : '0', 'important');
+      layer.appendChild(clone);
+    });
     document.documentElement.appendChild(layer);
     return true;
   }, { selector: SLIDE_SELECTOR, chromeSelector: CHROME_SELECTOR, index, size });

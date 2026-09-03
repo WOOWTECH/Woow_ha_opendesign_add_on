@@ -9,6 +9,7 @@ const upstreamPort = Number(process.env.OD_INGRESS_PORT || 8099);
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || '/usr/bin/chromium-browser';
 const publicRequests = [];
 const forwardedRequests = [];
+const proxySockets = new Set();
 
 const proxy = http.createServer((request, response) => {
   publicRequests.push(request.url);
@@ -49,8 +50,16 @@ const proxy = http.createServer((request, response) => {
     path: stripped,
     requestProof: upstream.getHeader('x-request-proof'),
   });
-  upstream.on('error', (error) => response.destroy(error));
+  upstream.on('error', (error) => {
+    console.error(`Supervisor-style proxy upstream failure for ${stripped}: ${error.message}`);
+    response.destroy(error);
+  });
   request.pipe(upstream);
+});
+
+proxy.on('connection', (socket) => {
+  proxySockets.add(socket);
+  socket.once('close', () => proxySockets.delete(socket));
 });
 
 proxy.on('upgrade', (request, socket) => {
@@ -82,10 +91,11 @@ const proxyPort = proxy.address().port;
 let browser;
 const downloads = [];
 try {
-  browser = await chromium.launch({ executablePath, headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+  browser = await chromium.launch({ executablePath, headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-http2', '--disable-quic'] });
   const context = await browser.newContext({ acceptDownloads: true });
   const page = await context.newPage();
   page.on('download', (download) => downloads.push(download));
+  page.on('requestfailed', (request) => console.error(`browser request failed: ${request.method()} ${request.url()} ${request.failure()?.errorText || ''}`));
   await page.goto(`http://127.0.0.1:${proxyPort}${prefix}/`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await page.waitForFunction(() => window.__OD_HA_EXPORT_BRIDGE_INSTALLED__ === true, null, { timeout: 15_000 });
 
@@ -117,25 +127,28 @@ try {
     websocket: 'ingress-ws',
   });
 
-  const pdfDownloadPromise = page.waitForEvent('download', { timeout: 120_000 });
-  const pdfResponse = await page.evaluate(async () => {
-    const request = new Request(new URL('/api/projects/ha-smoke/export/pdf', location.origin), {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-request-proof': 'browser-request' },
-      body: JSON.stringify({ fileName: 'deck.html', deck: true, title: 'Ingress browser' }),
-      credentials: 'same-origin',
-    });
-    const response = await fetch(request);
-    return response.json();
-  });
+  const [pdfDownload, pdfResponse] = await Promise.all([
+    page.waitForEvent('download', { timeout: 120_000 }),
+    page.evaluate(async () => {
+      // This matches OpenDesign 0.21.1's actual exportProjectAsPdf call shape.
+      // Request-object preservation is covered separately by the unit test.
+      const response = await fetch('/api/projects/ha-smoke/export/pdf', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-request-proof': 'browser-request' },
+        body: JSON.stringify({ fileName: 'deck.html', deck: true, title: 'Ingress browser' }),
+        credentials: 'same-origin',
+      });
+      return response.json();
+    }),
+  ]);
   assert.deepEqual(pdfResponse, { ok: true });
-  const pdfDownload = await pdfDownloadPromise;
   const pdfPath = await pdfDownload.path();
   assert.ok(pdfPath);
   assert.ok((await readFile(pdfPath)).subarray(0, 5).equals(Buffer.from('%PDF-')));
 
-  const imageDownloadPromise = page.waitForEvent('download', { timeout: 120_000 });
-  await page.evaluate(async () => {
+  const [imageDownload] = await Promise.all([
+    page.waitForEvent('download', { timeout: 120_000 }),
+    page.evaluate(async () => {
     const frame = document.createElement('iframe');
     frame.src = '/api/projects/ha-smoke/raw/deck.html';
     frame.hidden = true;
@@ -148,10 +161,10 @@ try {
         <button class="ghost-link button-like" type="button">Cancel</button>
       </div>`;
     document.body.append(frame, dialog);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    dialog.querySelector('.viewer-action.primary').click();
-  });
-  const imageDownload = await imageDownloadPromise;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      dialog.querySelector('.viewer-action.primary').click();
+    }),
+  ]);
   const imagePath = await imageDownload.path();
   assert.ok(imagePath);
   assert.ok((await readFile(imagePath)).subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])));
@@ -169,6 +182,9 @@ try {
   console.log('container browser ingress e2e: built UI injection, path stripping, fetch/XHR/SSE/WebSocket, PDF Request headers, and image action passed');
 } finally {
   await browser?.close().catch(() => {});
+  proxy.closeAllConnections?.();
+  proxy.closeIdleConnections?.();
+  for (const socket of proxySockets) socket.destroy();
   await new Promise((resolve) => proxy.close(resolve));
   for (const download of downloads) {
     const filepath = await download.path().catch(() => null);
