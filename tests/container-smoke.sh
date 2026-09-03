@@ -134,8 +134,8 @@ HTML
 # Run the actual injected scripts in Chromium through a Supervisor-style proxy
 # that receives the public prefix, strips it, and supplies X-Ingress-Path to
 # nginx. The probes exercise real browser transports and real export endpoints.
-docker cp tests/container-ingress-browser-e2e.mjs "$container:/tmp/container-ingress-browser-e2e.mjs"
-docker exec "$container" node /tmp/container-ingress-browser-e2e.mjs
+docker cp tests/container-ingress-browser-e2e.mjs "$container:/opt/ha-opendesign/container-ingress-browser-e2e.mjs"
+docker exec "$container" node /opt/ha-opendesign/container-ingress-browser-e2e.mjs
 
 post_export() {
   local endpoint=$1 body=$2 output=$3
