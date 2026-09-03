@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { lookup } from 'node:dns/promises';
-import { mkdir, readFile, realpath } from 'node:fs/promises';
+import { lstat, mkdir, readFile, realpath } from 'node:fs/promises';
 import http from 'node:http';
 import https from 'node:https';
 import { isIP } from 'node:net';
@@ -142,18 +142,55 @@ function isStrictChild(parent, candidate) {
 export async function canonicalizeOutputDir(outputDir, options = {}) {
   const dataDir = path.resolve(options.dataDir ?? process.env.OD_DATA_DIR ?? '/data/opendesign');
   const exportRoot = path.resolve(dataDir, 'export-render');
-  await mkdir(dataDir, { recursive: true });
-  await mkdir(exportRoot, { recursive: true });
-  await mkdir(outputDir, { recursive: true });
-  const [canonicalDataDir, canonicalExportRoot, canonicalOutputDir] = await Promise.all([
-    realpath(dataDir),
-    realpath(exportRoot),
-    realpath(outputDir),
-  ]);
-  if (!isStrictChild(canonicalDataDir, canonicalExportRoot)) {
-    throw new Error('canonical export root escapes OD_DATA_DIR');
+  const requestedOutputDir = path.resolve(outputDir);
+  if (!isStrictChild(exportRoot, requestedOutputDir)) {
+    throw new Error('canonical outputDir escapes the export root');
   }
-  if (!isStrictChild(canonicalExportRoot, canonicalOutputDir)) {
+
+  // The launcher owns creation of these trusted roots. Resolve and validate
+  // them before creating caller-controlled paths so a replaced export-root
+  // symlink cannot cause mkdir to write outside OD_DATA_DIR.
+  const [canonicalDataDir, exportRootStat, canonicalExportRoot] = await Promise.all([
+    realpath(dataDir),
+    lstat(exportRoot),
+    realpath(exportRoot),
+  ]);
+  const expectedExportRoot = path.join(canonicalDataDir, 'export-render');
+  if (exportRootStat.isSymbolicLink()
+    || !exportRootStat.isDirectory()
+    || canonicalExportRoot !== expectedExportRoot
+    || !isStrictChild(canonicalDataDir, canonicalExportRoot)) {
+    throw new Error('canonical export root escapes OD_DATA_DIR or is a symlink');
+  }
+
+  let existingParent = path.dirname(requestedOutputDir);
+  let canonicalParent;
+  while (canonicalParent == null) {
+    try {
+      canonicalParent = await realpath(existingParent);
+    } catch (error) {
+      if (error?.code !== 'ENOENT' || existingParent === exportRoot) throw error;
+      existingParent = path.dirname(existingParent);
+    }
+  }
+  if (canonicalParent !== canonicalExportRoot && !isStrictChild(canonicalExportRoot, canonicalParent)) {
+    throw new Error('canonical outputDir parent escapes the export root');
+  }
+  await mkdir(requestedOutputDir, { recursive: true });
+
+  const [finalDataDir, finalExportRootStat, finalExportRoot, canonicalOutputDir] = await Promise.all([
+    realpath(dataDir),
+    lstat(exportRoot),
+    realpath(exportRoot),
+    realpath(requestedOutputDir),
+  ]);
+  if (finalExportRootStat.isSymbolicLink()
+    || finalDataDir !== canonicalDataDir
+    || finalExportRoot !== canonicalExportRoot
+    || !isStrictChild(finalDataDir, finalExportRoot)) {
+    throw new Error('canonical export root changed during output creation');
+  }
+  if (!isStrictChild(finalExportRoot, canonicalOutputDir)) {
     throw new Error('canonical outputDir escapes the export root');
   }
   return canonicalOutputDir;
@@ -211,15 +248,35 @@ export function classifyIpAddress(address) {
   if (version === 6) {
     const value = ipv6Number(bareAddress);
     if (value == null) return 'invalid';
+    const embeddedIpv4 = (embedded) => classifyIpAddress([
+      Number((embedded >> 24n) & 0xffn), Number((embedded >> 16n) & 0xffn),
+      Number((embedded >> 8n) & 0xffn), Number(embedded & 0xffn),
+    ].join('.'));
     const mappedBase = ipv6Number('::ffff:0:0');
-    if (inIpv6Cidr(value, mappedBase, 96)) {
-      return classifyIpAddress([
-        Number((value >> 24n) & 0xffn), Number((value >> 16n) & 0xffn),
-        Number((value >> 8n) & 0xffn), Number(value & 0xffn),
-      ].join('.'));
+    const translatableBase = ipv6Number('::ffff:0:0:0');
+    if (inIpv6Cidr(value, mappedBase, 96) || inIpv6Cidr(value, translatableBase, 96)) {
+      return embeddedIpv4(value & 0xffffffffn);
+    }
+    // IPv4 transition mechanisms can otherwise disguise private/link-local
+    // IPv4 destinations inside a globally shaped IPv6 literal.
+    const sixToFourBase = ipv6Number('2002::');
+    if (inIpv6Cidr(value, sixToFourBase, 16)) {
+      const classification = embeddedIpv4((value >> 80n) & 0xffffffffn);
+      if (classification !== 'public') return classification;
+    }
+    const teredoBase = ipv6Number('2001::');
+    if (inIpv6Cidr(value, teredoBase, 32)) {
+      const server = embeddedIpv4((value >> 64n) & 0xffffffffn);
+      const client = embeddedIpv4((~value) & 0xffffffffn);
+      if (server !== 'public' || client !== 'public') return 'non-public';
+    }
+    const isatapMarker = (value >> 32n) & 0xffffffffn;
+    if (isatapMarker === 0x00005efen || isatapMarker === 0x02005efen) {
+      const classification = embeddedIpv4(value & 0xffffffffn);
+      if (classification !== 'public') return classification;
     }
     const blocked = [
-      ['::', 128], ['::1', 128], ['::', 96], ['64:ff9b:1::', 48], ['100::', 64],
+      ['::', 128], ['::1', 128], ['::', 96], ['64:ff9b::', 96], ['64:ff9b:1::', 48], ['100::', 64],
       ['2001:2::', 48], ['2001:10::', 28], ['2001:db8::', 32], ['fc00::', 7],
       ['fe80::', 10], ['fec0::', 10], ['ff00::', 8],
     ];

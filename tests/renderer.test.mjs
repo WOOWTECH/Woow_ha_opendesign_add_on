@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -53,6 +53,17 @@ test('output filenames cannot escape their supplied directory', () => {
   assert.throws(() => confinedOutputPath('tmp/export', 'slide.png'), /absolute/);
 });
 
+test('canonical output confinement creates a direct child only after trusting its parent', async (t) => {
+  const base = await mkdtemp(path.join(tmpdir(), 'od-render-create-'));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const dataDir = path.join(base, 'data');
+  const exportRoot = path.join(dataDir, 'export-render');
+  const outputDir = path.join(exportRoot, 'job');
+  await mkdir(exportRoot, { recursive: true });
+  assert.equal(await canonicalizeOutputDir(outputDir, { dataDir }), outputDir);
+  await access(outputDir);
+});
+
 test('canonical output confinement rejects an outputDir symlink escape', async (t) => {
   const base = await mkdtemp(path.join(tmpdir(), 'od-render-path-'));
   t.after(() => rm(base, { recursive: true, force: true }));
@@ -90,6 +101,11 @@ test('canonical confinement also rejects a replaced export root', async (t) => {
     canonicalizeOutputDir(path.join(dataDir, 'export-render', 'job'), { dataDir }),
     /canonical export root escapes/,
   );
+  await assert.rejects(
+    access(path.join(outside, 'job')),
+    (error) => error?.code === 'ENOENT',
+    'validation must happen before mkdir can create outside/job',
+  );
 });
 
 test('deck detection honors explicit caller intent', () => {
@@ -104,11 +120,19 @@ test('IP classification rejects HA-reachable and special address ranges', () => 
   for (const address of [
     '0.0.0.0', '10.0.0.1', '100.64.0.1', '127.0.0.1', '169.254.169.254',
     '172.16.1.1', '192.168.1.1', '198.18.0.1', '224.0.0.1', '::', '::1',
-    '::ffff:127.0.0.1', '::ffff:7f00:1', 'fc00::1', 'fd00::1', 'fe80::1',
+    '::169.254.169.254', '::ffff:127.0.0.1', '::ffff:7f00:1',
+    '::ffff:0:169.254.169.254',
+    '64:ff9b::a9fe:a9fe', '64:ff9b::8.8.8.8', '64:ff9b:1::a9fe:a9fe',
+    '2002:a9fe:a9fe::', '2002:c0a8:0101::',
+    '2001:0000:0808:0808:0000:0000:5601:5601',
+    '2606:4700::5efe:a9fe:a9fe', 'fc00::1', 'fd00::1', 'fe80::1',
     'ff02::1', '100::1', '2001:db8::1',
   ]) assert.equal(classifyIpAddress(address), 'non-public', address);
   assert.equal(classifyIpAddress('8.8.8.8'), 'public');
   assert.equal(classifyIpAddress('::ffff:8.8.8.8'), 'public');
+  assert.equal(classifyIpAddress('::ffff:0:8.8.8.8'), 'public');
+  assert.equal(classifyIpAddress('2002:0808:0808::'), 'public');
+  assert.equal(classifyIpAddress('2606:4700::5efe:0808:0808'), 'public');
   assert.equal(classifyIpAddress('2606:4700:4700::1111'), 'public');
   assert.equal(classifyIpAddress('not-an-ip'), 'invalid');
 });
@@ -123,6 +147,8 @@ test('request policy allows local schemes and only the exact daemon loopback ori
   assert.equal((await evaluateRequestPolicy('http://169.254.169.254/latest/meta-data', { daemonOrigin })).allow, false);
   assert.equal((await evaluateRequestPolicy('http://100.64.0.1/', { daemonOrigin })).allow, false);
   assert.equal((await evaluateRequestPolicy('http://[fe80::1]/', { daemonOrigin })).allow, false);
+  assert.equal((await evaluateRequestPolicy('http://[64:ff9b::a9fe:a9fe]/', { daemonOrigin })).allow, false);
+  assert.equal((await evaluateRequestPolicy('http://[2002:a9fe:a9fe::]/', { daemonOrigin })).allow, false);
   assert.equal((await evaluateRequestPolicy('file:///etc/passwd', { daemonOrigin })).allow, false);
 });
 

@@ -48,6 +48,27 @@ import sys
 assert json.load(open(sys.argv[1], encoding='utf-8')).get('ok') is True
 PY
 
+# HA Supervisor removes the public ingress prefix before proxying and supplies
+# it in X-Ingress-Path. Nginx therefore receives '/' and must inject/rewrite the
+# prefix into the returned application shell.
+ingress_prefix=/api/hassio_ingress/abcdefghijklmnop
+curl --fail-with-body -sSL -o "$tmp/ingress.html" \
+  -H "X-Ingress-Path: $ingress_prefix" \
+  "http://127.0.0.1:${port}/"
+grep -Fq "window.__OD_INGRESS_PATH__=\"$ingress_prefix\"" "$tmp/ingress.html"
+grep -Eq "(href|src)=\\\"$ingress_prefix/_next/" "$tmp/ingress.html"
+
+# This models a browser request to <public-prefix>/api/health after Supervisor
+# path stripping: nginx sees /api/health plus the validated prefix header.
+curl --fail-with-body -sS -o "$tmp/ingress-health.json" \
+  -H "X-Ingress-Path: $ingress_prefix" \
+  "http://127.0.0.1:${port}/api/health"
+python3 - "$tmp/ingress-health.json" <<'PY'
+import json
+import sys
+assert json.load(open(sys.argv[1], encoding='utf-8')).get('ok') is True
+PY
+
 docker exec "$container" sh -ceu '
   test "$(id -u)" = 1001
   test "$(id -g)" = 1001
@@ -89,10 +110,19 @@ docker exec "$container" node /tmp/container-renderer-e2e.mjs
 
 # Create only daemon metadata over HTTP, then seed deterministic fixture HTML in
 # that project's persistent directory. No BYOK call is involved.
+# As above, this is the stripped nginx-side shape of the browser's prefixed API
+# request. The response proves a non-health API survives ingress forwarding.
 curl --fail-with-body -sS -o "$tmp/project.json" \
+  -H "X-Ingress-Path: $ingress_prefix" \
   -H 'content-type: application/json' \
   --data '{"id":"ha-smoke","name":"HA smoke","skipDiscoveryBrief":true}' \
   "http://127.0.0.1:${port}/api/projects"
+python3 - "$tmp/project.json" <<'PY'
+import json
+import sys
+body = json.load(open(sys.argv[1], encoding='utf-8'))
+assert 'ha-smoke' in json.dumps(body), body
+PY
 docker exec -i "$container" sh -c 'cat > /data/opendesign/projects/ha-smoke/deck.html' <<'HTML'
 <!doctype html><html><head><style>
 html,body{margin:0;background:#fff}.slide{width:640px;height:360px;display:block;color:#fff;font:32px sans-serif}
@@ -113,15 +143,112 @@ post_export image '{"fileName":"deck.html","deck":true,"imageFormat":"jpeg"}' "$
 post_export pdf-image '{"fileName":"deck.html","deck":true,"title":"Smoke"}' "$tmp/deck.pdf"
 post_export pptx '{"fileName":"deck.html","deck":true,"title":"Smoke"}' "$tmp/deck.pptx"
 
+test "$(pdfinfo "$tmp/deck.pdf" | awk '/^Pages:/ { print $2 }')" = 2
+
 python3 - "$tmp/deck.png" "$tmp/deck.jpg" "$tmp/deck.pdf" "$tmp/deck.pptx" <<'PY'
 from pathlib import Path
+import io
+import re
+import struct
 import sys
+import zipfile
+import zlib
+
 png, jpg, pdf, pptx = map(Path, sys.argv[1:])
-assert png.stat().st_size > 100 and png.read_bytes().startswith(b'\x89PNG\r\n\x1a\n')
-assert jpg.stat().st_size > 100 and jpg.read_bytes().startswith(b'\xff\xd8\xff')
-assert pdf.stat().st_size > 100 and pdf.read_bytes().startswith(b'%PDF-')
-assert pptx.stat().st_size > 100 and pptx.read_bytes().startswith(b'PK')
-print('HTTP exports: non-empty PNG, JPEG, screenshot PDF, screenshot PPTX')
+
+
+def png_pixels(data):
+    assert data.startswith(b'\x89PNG\r\n\x1a\n')
+    offset = 8
+    compressed = bytearray()
+    width = height = color_type = None
+    while offset < len(data):
+        length = struct.unpack('>I', data[offset:offset + 4])[0]
+        kind = data[offset + 4:offset + 8]
+        payload = data[offset + 8:offset + 8 + length]
+        offset += 12 + length
+        if kind == b'IHDR':
+            width, height, depth, color_type = struct.unpack('>IIBB', payload[:10])
+            assert depth == 8 and color_type in (2, 6)
+        elif kind == b'IDAT':
+            compressed.extend(payload)
+        elif kind == b'IEND':
+            break
+    channels = 3 if color_type == 2 else 4
+    stride = width * channels
+    raw = zlib.decompress(compressed)
+    rows = []
+    previous = bytearray(stride)
+    cursor = 0
+    for _ in range(height):
+        filter_type = raw[cursor]
+        cursor += 1
+        encoded = raw[cursor:cursor + stride]
+        cursor += stride
+        row = bytearray(stride)
+        for index, byte in enumerate(encoded):
+            left = row[index - channels] if index >= channels else 0
+            above = previous[index]
+            upper_left = previous[index - channels] if index >= channels else 0
+            if filter_type == 0:
+                predictor = 0
+            elif filter_type == 1:
+                predictor = left
+            elif filter_type == 2:
+                predictor = above
+            elif filter_type == 3:
+                predictor = (left + above) // 2
+            elif filter_type == 4:
+                estimate = left + above - upper_left
+                distances = (abs(estimate - left), abs(estimate - above), abs(estimate - upper_left))
+                predictor = (left, above, upper_left)[distances.index(min(distances))]
+            else:
+                raise AssertionError(f'unsupported PNG filter {filter_type}')
+            row[index] = (byte + predictor) & 0xff
+        rows.append(row)
+        previous = row
+    return width, height, channels, rows
+
+
+def jpeg_dimensions(data):
+    assert data.startswith(b'\xff\xd8\xff')
+    offset = 2
+    while offset + 8 < len(data):
+        if data[offset] != 0xff:
+            offset += 1
+            continue
+        marker = data[offset + 1]
+        if marker in (0xd8, 0xd9):
+            offset += 2
+            continue
+        length = struct.unpack('>H', data[offset + 2:offset + 4])[0]
+        if 0xc0 <= marker <= 0xc3:
+            return struct.unpack('>HH', data[offset + 5:offset + 9])
+        offset += 2 + length
+    raise AssertionError('JPEG dimensions not found')
+
+
+png_data = png.read_bytes()
+width, height, channels, rows = png_pixels(png_data)
+assert (width, height) == (640, 720), (width, height)
+center = width // 2 * channels
+top = tuple(rows[height // 4][center:center + 3])
+bottom = tuple(rows[height * 3 // 4][center:center + 3])
+assert all(abs(actual - expected) <= 3 for actual, expected in zip(top, (22, 93, 186))), top
+assert all(abs(actual - expected) <= 3 for actual, expected in zip(bottom, (170, 51, 51))), bottom
+
+jpg_data = jpg.read_bytes()
+assert jpeg_dimensions(jpg_data) == (720, 640)  # JPEG stores height, then width.
+
+pdf_data = pdf.read_bytes()
+assert pdf_data.startswith(b'%PDF-') and len(pdf_data) > 100
+
+pptx_data = pptx.read_bytes()
+assert pptx_data.startswith(b'PK') and len(pptx_data) > 100
+with zipfile.ZipFile(io.BytesIO(pptx_data)) as archive:
+    slides = [name for name in archive.namelist() if re.fullmatch(r'ppt/slides/slide\d+\.xml', name)]
+assert len(slides) == 2, slides
+print('HTTP exports: two-color 640x720 stitched PNG/JPEG, 2-page PDF, and 2-slide PPTX')
 PY
 
 editable_status=$(curl -sS -o "$tmp/editable.json" -w '%{http_code}' \
@@ -133,4 +260,4 @@ grep -qi 'Editable PPTX is unsupported' "$tmp/editable.json"
 
 # The seeded project and DB record remain after the earlier restart; this export
 # set proves renderer/assembly operation without needing an AI provider key.
-echo 'container smoke: health, UID/paths, CLI absence, persistence, renderer, and HTTP assembly passed'
+echo 'container smoke: ingress prefix, health/API, UID/paths, persistence, two-slide renderer, and HTTP assembly passed'
