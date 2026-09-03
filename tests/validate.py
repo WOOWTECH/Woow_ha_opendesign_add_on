@@ -82,6 +82,7 @@ check("context.route" in renderer and "serviceWorkers: 'block'" in renderer, "re
 check("context.routeWebSocket" in renderer and "WebSockets disabled in renderer" in renderer, "renderer must block WebSockets at browser-context level")
 check("new Semaphore(1)" in renderer and "MAX_REMOTE_FETCHES" in renderer, "renderer concurrency controls missing")
 check("runWithAbsoluteDeadline" in renderer and "AbortController" in renderer, "renderer absolute abortable deadline missing")
+check("mkdtemp('/tmp/ha-opendesign-chromium-')" in renderer and "XDG_CONFIG_HOME" in renderer and "XDG_CACHE_HOME" in renderer, "renderer Chromium must use an ephemeral writable HOME/XDG profile")
 check("--disable-web-security" not in renderer, "renderer must not disable browser web security")
 check("redirectPdfRequest" in export_bridge and "/export/image" in export_bridge, "browser PDF/image export bridge missing")
 check("proxy_pass http://127.0.0.1:7456" in nginx, "nginx may only forward to loopback OpenDesign")

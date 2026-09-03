@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import http from 'node:http';
 import { chromium } from 'playwright-core';
 
@@ -112,8 +113,18 @@ await new Promise((resolve, reject) => {
 });
 const proxyPort = proxy.address().port;
 let browser;
+let chromiumHome;
 try {
-  browser = await chromium.launch({ executablePath, headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-http2', '--disable-quic'] });
+  chromiumHome = await mkdtemp('/tmp/ha-opendesign-ci-browser-');
+  const configHome = `${chromiumHome}/config`;
+  const cacheHome = `${chromiumHome}/cache`;
+  await Promise.all([mkdir(configHome), mkdir(cacheHome)]);
+  browser = await chromium.launch({
+    executablePath,
+    headless: true,
+    env: { ...process.env, HOME: chromiumHome, XDG_CONFIG_HOME: configHome, XDG_CACHE_HOME: cacheHome },
+    args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-http2', '--disable-quic'],
+  });
   const context = await browser.newContext({ acceptDownloads: true });
   const page = await context.newPage();
   page.on('requestfailed', (request) => console.error(`browser request failed: ${request.method()} ${request.url()} ${request.failure()?.errorText || ''}`));
@@ -211,4 +222,5 @@ try {
   proxy.closeIdleConnections?.();
   for (const socket of proxySockets) socket.destroy();
   await new Promise((resolve) => proxy.close(resolve));
+  if (chromiumHome) await rm(chromiumHome, { recursive: true, force: true });
 }

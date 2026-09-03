@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { lookup } from 'node:dns/promises';
-import { lstat, mkdir, readFile, realpath, stat, unlink } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, realpath, rm, stat, unlink } from 'node:fs/promises';
 import http from 'node:http';
 import https from 'node:https';
 import { isIP } from 'node:net';
@@ -765,6 +765,7 @@ async function capturePage(page, input, outputBudget) {
 
 async function renderSlidesExclusive(rawInput, signal) {
   let browser;
+  let chromiumHome;
   const closeOnAbort = () => void browser?.close().catch(() => {});
   signal.addEventListener('abort', closeOnAbort, { once: true });
   try {
@@ -774,9 +775,19 @@ async function renderSlidesExclusive(rawInput, signal) {
     }
     input.outputDir = await waitWithSignal(canonicalizeOutputDir(input.outputDir), signal);
     const { chromium } = await import('playwright-core');
+    chromiumHome = await mkdtemp('/tmp/ha-opendesign-chromium-');
+    const configHome = path.join(chromiumHome, 'config');
+    const cacheHome = path.join(chromiumHome, 'cache');
+    await Promise.all([mkdir(configHome), mkdir(cacheHome)]);
     const launch = chromium.launch({
       executablePath: executablePath(),
       headless: true,
+      env: {
+        ...process.env,
+        HOME: chromiumHome,
+        XDG_CONFIG_HOME: configHome,
+        XDG_CACHE_HOME: cacheHome,
+      },
       args: ['--no-sandbox', '--disable-dev-shm-usage', '--font-render-hinting=none'],
     });
     launch.then((launched) => {
@@ -827,6 +838,7 @@ async function renderSlidesExclusive(rawInput, signal) {
   } finally {
     signal.removeEventListener('abort', closeOnAbort);
     await browser?.close().catch(() => {});
+    if (chromiumHome) await rm(chromiumHome, { recursive: true, force: true }).catch(() => {});
   }
 }
 
