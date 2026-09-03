@@ -102,7 +102,16 @@
       const redirected = redirectPdfRequest(value, method);
       if (!redirected) return nativeFetch(input, init);
 
-      const response = await nativeFetch(redirected, init);
+      let redirectedInput = redirected;
+      let redirectedInit = init;
+      if (root.Request && input instanceof root.Request) {
+        // Applying init to the original first preserves Fetch's Request + init
+        // override semantics, then the second construction changes only URL.
+        const effectiveRequest = init === undefined ? input : new root.Request(input, init);
+        redirectedInput = new root.Request(new root.URL(redirected, input.url).href, effectiveRequest);
+        redirectedInit = undefined;
+      }
+      const response = await nativeFetch(redirectedInput, redirectedInit);
       if (!response.ok) return response;
       const blob = await response.blob();
       const context = extractArtifactContext(value, init);

@@ -77,6 +77,7 @@ docker exec "$container" sh -ceu '
   test -r /app/apps/daemon/dist/cli.js
   test -d /app/apps/web/out
   test -x /usr/bin/chromium-browser
+  command -v bash >/dev/null
   test -r /opt/ha-opendesign/headless-entry.mjs
   test -r /opt/ha-opendesign/headless-renderer.mjs
   test -r /opt/ha-opendesign/ha-export-bridge.js
@@ -129,6 +130,12 @@ html,body{margin:0;background:#fff}.slide{width:640px;height:360px;display:block
 .slide:first-of-type{background:#165dba}.slide:last-of-type{background:#a33}
 </style></head><body><section class="slide">Slide one</section><section class="slide">Slide two</section></body></html>
 HTML
+
+# Run the actual injected scripts in Chromium through a Supervisor-style proxy
+# that receives the public prefix, strips it, and supplies X-Ingress-Path to
+# nginx. The probes exercise real browser transports and real export endpoints.
+docker cp tests/container-ingress-browser-e2e.mjs "$container:/tmp/container-ingress-browser-e2e.mjs"
+docker exec "$container" node /tmp/container-ingress-browser-e2e.mjs
 
 post_export() {
   local endpoint=$1 body=$2 output=$3
@@ -260,4 +267,4 @@ grep -qi 'Editable PPTX is unsupported' "$tmp/editable.json"
 
 # The seeded project and DB record remain after the earlier restart; this export
 # set proves renderer/assembly operation without needing an AI provider key.
-echo 'container smoke: ingress prefix, health/API, UID/paths, persistence, two-slide renderer, and HTTP assembly passed'
+echo 'container smoke: real-browser HA prefix/probes/actions, health/API, persistence, renderer, and HTTP assembly passed'

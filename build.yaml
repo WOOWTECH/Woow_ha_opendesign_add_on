@@ -1,6 +1,6 @@
 build_from:
-  amd64: ghcr.io/nexu-io/od:0.21.1
-  aarch64: ghcr.io/nexu-io/od:0.21.1
+  amd64: ghcr.io/nexu-io/od:0.21.1@sha256:441daca881e699657bacf28e0c27b16cd6be551dfff4bd63368dd74bec581f39
+  aarch64: ghcr.io/nexu-io/od:0.21.1@sha256:441daca881e699657bacf28e0c27b16cd6be551dfff4bd63368dd74bec581f39
 labels:
   org.opencontainers.image.title: Woow HA OpenDesign
   org.opencontainers.image.description: OpenDesign 0.21.1 for Home Assistant Ingress

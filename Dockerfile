@@ -1,4 +1,4 @@
-ARG BUILD_FROM=ghcr.io/nexu-io/od:0.21.1
+ARG BUILD_FROM=ghcr.io/nexu-io/od:0.21.1@sha256:441daca881e699657bacf28e0c27b16cd6be551dfff4bd63368dd74bec581f39
 FROM ${BUILD_FROM}
 
 USER root
@@ -14,6 +14,7 @@ ENV NODE_ENV=production \
 # The browser comes from Alpine rather than being downloaded on first boot.
 # playwright-core is locked independently in /opt/ha-opendesign/package-lock.json.
 RUN apk add --no-cache \
+      bash \
       chromium \
       font-noto-cjk \
       font-noto-emoji \
@@ -25,6 +26,7 @@ COPY runtime/package.json runtime/package-lock.json /opt/ha-opendesign/
 RUN npm ci --omit=dev --prefix /opt/ha-opendesign \
     && npm cache clean --force \
     && test "$(id -u open-design)" = "1001" \
+    && command -v bash \
     && command -v chromium-browser \
     && command -v nginx
 

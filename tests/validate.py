@@ -37,7 +37,8 @@ check(config.get("watchdog") == "http://[HOST]:[PORT:8099]/api/health", "watchdo
 check(config.get("options") == {} and config.get("schema") == {}, "add-on options/schema must stay empty (no provider secrets)")
 check("map" not in config, "host/add-on path maps are forbidden")
 check(config.get("image") == "ghcr.io/woowtech/woow-ha-opendesign-{arch}", "architecture image pattern mismatch")
-check(build.get("build_from") == {"amd64": "ghcr.io/nexu-io/od:0.21.1", "aarch64": "ghcr.io/nexu-io/od:0.21.1"}, "both architectures must pin OpenDesign 0.21.1")
+upstream_image = "ghcr.io/nexu-io/od:0.21.1@sha256:441daca881e699657bacf28e0c27b16cd6be551dfff4bd63368dd74bec581f39"
+check(build.get("build_from") == {"amd64": upstream_image, "aarch64": upstream_image}, "both architectures must pin OpenDesign 0.21.1 by digest")
 check(package.get("dependencies") == {"playwright-core": "1.55.0"}, "renderer dependency must remain exactly pinned")
 
 dockerfile = (ROOT / "Dockerfile").read_text()
@@ -57,12 +58,12 @@ runtime_sources = "\n".join([
     (ROOT / "runtime/package.json").read_text(),
 ])
 
-check(re.search(r"^ARG BUILD_FROM=ghcr\.io/nexu-io/od:0\.21\.1$", dockerfile, re.M), "Dockerfile base must be pinned")
+check(re.search(rf"^ARG BUILD_FROM={re.escape(upstream_image)}$", dockerfile, re.M), "Dockerfile base must pin the approved upstream digest")
 check("EXPOSE" not in dockerfile, "Dockerfile must not expose a port")
 check("OD_DATA_DIR=/data/opendesign" in dockerfile, "OD_DATA_DIR persistence is missing")
 check("OD_BIND_HOST=127.0.0.1" in dockerfile, "Dockerfile must set loopback bind")
 check("USER open-design" in dockerfile, "final runtime user must be open-design (UID 1001 upstream)")
-for expected in ["chromium", "font-noto-cjk", "font-noto-emoji", "fontconfig", "nginx"]:
+for expected in ["bash", "chromium", "font-noto-cjk", "font-noto-emoji", "fontconfig", "nginx"]:
     check(expected in dockerfile, f"expected image package missing: {expected}")
 check("npm ci --omit=dev" in dockerfile, "locked production npm install required")
 check("startServer" in entry and "desktopSlideRenderer: renderSlides" in entry, "slide renderer injection missing")
@@ -73,6 +74,9 @@ check("SHUTDOWN_GRACE_SECONDS" in launcher and "kill -KILL" in launcher, "bounde
 check("canonicalizeOutputDir" in renderer and "canonical outputDir escapes" in renderer, "canonical output confinement missing")
 check("evaluateRequestPolicy" in renderer and "allowPublicHttpAssets: true" in renderer, "renderer network policy missing")
 check("context.route" in renderer and "serviceWorkers: 'block'" in renderer, "renderer policy must cover popups/workers")
+check("context.routeWebSocket" in renderer and "WebSockets disabled in renderer" in renderer, "renderer must block WebSockets at browser-context level")
+check("new Semaphore(1)" in renderer and "MAX_REMOTE_FETCHES" in renderer, "renderer concurrency controls missing")
+check("runWithAbsoluteDeadline" in renderer and "AbortController" in renderer, "renderer absolute abortable deadline missing")
 check("--disable-web-security" not in renderer, "renderer must not disable browser web security")
 check("redirectPdfRequest" in export_bridge and "/export/image" in export_bridge, "browser PDF/image export bridge missing")
 check("proxy_pass http://127.0.0.1:7456" in nginx, "nginx may only forward to loopback OpenDesign")
@@ -82,6 +86,11 @@ check("container-smoke.sh" in workflow_text and "load: true" in workflow_text, "
 check("linux/amd64" in workflow_text and "linux/arm64" in workflow_text, "CI architecture matrix is incomplete")
 check("ghcr.io/woowtech/woow-ha-opendesign-${{ matrix.arch }}" in workflow_text, "CI GHCR architecture image name mismatch")
 check("latest" not in workflow_text.lower(), "CI must not publish a latest tag")
+check(workflow.get("permissions") == {"contents": "read"}, "top-level workflow permissions must be contents:read only")
+check("github.ref_type == 'tag'" in workflow_text and "steps.metadata.outputs.publish == 'true'" in workflow_text, "publishing must be restricted to a matching release tag")
+check(upstream_image in workflow_text, "workflow build inputs must pin the approved upstream digest")
+for action_ref in re.findall(r"uses:\s*[^\s]+@([^\s#]+)", workflow_text):
+    check(bool(re.fullmatch(r"[0-9a-f]{40}", action_ref)), f"GitHub Action is not pinned to a full commit SHA: {action_ref}")
 
 for pattern, label in [
     (r"(?:^|[\s=:/])docker\.sock(?:$|[\s])", "container socket"),

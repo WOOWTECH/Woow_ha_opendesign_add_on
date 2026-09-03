@@ -39,12 +39,12 @@ PID 1 啟動器同時管理 nginx 與 OpenDesign；任一程序退出時會停�
 ./tests/run.sh
 ```
 
-本機測試不需要 Docker；會檢查 YAML、禁止的主機／本機執行環境耦合、JavaScript 與 shell 語法、renderer／網路安全純函式、匯出 bridge 及 Ingress fixture。CI 會先實際建置 amd64 映像，驗證健康檢查、重啟持久性、UID／路徑／CLI 缺席、Chromium PNG/JPEG、可編輯 PPTX 拒絕，以及 HTTP 截圖 PDF/PPTX 組裝，通過後才執行發布矩陣。
+本機測試不需要 Docker；會檢查 YAML、禁止的主機／本機執行環境耦合、JavaScript 與 shell 語法、renderer／網路安全純函式、匯出 bridge 及 Ingress fixture。CI 會先實際建置 amd64 映像，透過模擬 Supervisor 路徑剝除的代理在 Chromium 中執行注入腳本與 fetch／XHR／SSE／WebSocket、PDF／圖片操作，並驗證健康檢查、持久性、renderer 與 HTTP 匯出。amd64／aarch64 映像只在 Git 標籤與 `config.yaml` 版本完全相符時發布。
 
 ## 安全性
 
-模型產生的 HTML 在套用請求政策的 renderer Chromium 中執行。允許 `data:`、`blob:`、`about:`、精確的 OpenDesign loopback origin，以及通過 DNS／IP 驗證的公共 HTTP(S)；Supervisor、link-local、RFC1918、CGNAT、其他 loopback 連接埠及 IPv6 私有／link-local 位址都會被拒絕。CJK／emoji 使用映像內建字型，不依賴遠端字型 CDN。
+模型產生的 HTML 在套用請求政策的 renderer Chromium 中執行。允許 `data:`、`blob:`、`about:`、精確的 OpenDesign loopback origin，以及通過 DNS／IP 驗證並固定連線位址的公共 HTTP(S)。所有 WebSocket 與 Supervisor、link-local、RFC1918、CGNAT、其他 loopback 連接埠及 IPv6 私有／link-local 位址都會被拒絕。render 工作採單工執行，並受絕對期限、64 張投影片、總像素／輸出位元組，以及遠端資源並行數／位元組上限約束。CJK／emoji 使用映像內建字型，不依賴遠端字型 CDN。
 
 ## 授權
 
-執行映像衍生自 `ghcr.io/nexu-io/od:0.21.1`，OpenDesign 本身適用其上游授權與聲明。本儲存庫的附加元件封裝及整合程式採 MIT 授權，詳見 [LICENSE](LICENSE)。
+執行映像衍生自 `ghcr.io/nexu-io/od:0.21.1`，且所有建置路徑皆固定其 digest；OpenDesign 本身適用其上游授權與聲明。本儲存庫的附加元件封裝及整合程式採 MIT 授權，詳見 [LICENSE](LICENSE)。

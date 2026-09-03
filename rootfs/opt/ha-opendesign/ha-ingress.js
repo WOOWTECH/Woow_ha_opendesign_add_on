@@ -42,7 +42,7 @@
     }
     if (input instanceof Request) {
       const next = rewrite(input.url);
-      if (next !== input.url) input = new Request(next, input);
+      if (next !== input.url) input = new Request(new URL(next, input.url).href, input);
     }
     return originalFetch(input, init);
   };

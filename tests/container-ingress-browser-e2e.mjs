@@ -1,0 +1,168 @@
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { readFile, rm } from 'node:fs/promises';
+import http from 'node:http';
+import { chromium } from 'playwright-core';
+
+const prefix = '/api/hassio_ingress/abcdefghijklmnop';
+const upstreamPort = Number(process.env.OD_INGRESS_PORT || 8099);
+const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || '/usr/bin/chromium-browser';
+const publicRequests = [];
+
+const proxy = http.createServer((request, response) => {
+  publicRequests.push(request.url);
+  if (!request.url.startsWith(`${prefix}/`) && request.url !== prefix) {
+    response.writeHead(404).end('missing ingress prefix');
+    return;
+  }
+  const stripped = request.url.slice(prefix.length) || '/';
+  if (stripped === '/__ha_probe/fetch') {
+    response.writeHead(200, { 'content-type': 'application/json' }).end('{"transport":"fetch"}');
+    return;
+  }
+  if (stripped === '/__ha_probe/xhr') {
+    response.writeHead(200, { 'content-type': 'text/plain' }).end('xhr');
+    return;
+  }
+  if (stripped === '/__ha_probe/events') {
+    response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+    response.end('data: ingress-sse\n\n');
+    return;
+  }
+
+  const upstream = http.request({
+    hostname: '127.0.0.1',
+    port: upstreamPort,
+    method: request.method,
+    path: stripped,
+    headers: {
+      ...request.headers,
+      host: `127.0.0.1:${upstreamPort}`,
+      'x-ingress-path': prefix,
+    },
+  }, (upstreamResponse) => {
+    response.writeHead(upstreamResponse.statusCode || 502, upstreamResponse.headers);
+    upstreamResponse.pipe(response);
+  });
+  upstream.on('error', (error) => response.destroy(error));
+  request.pipe(upstream);
+});
+
+proxy.on('upgrade', (request, socket) => {
+  publicRequests.push(request.url);
+  if (request.url !== `${prefix}/__ha_probe/ws`) {
+    socket.destroy();
+    return;
+  }
+  const accept = createHash('sha1')
+    .update(`${request.headers['sec-websocket-key']}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+    .digest('base64');
+  socket.write([
+    'HTTP/1.1 101 Switching Protocols',
+    'Upgrade: websocket',
+    'Connection: Upgrade',
+    `Sec-WebSocket-Accept: ${accept}`,
+    '',
+    '',
+  ].join('\r\n'));
+  socket.write(Buffer.from([0x81, 0x0a, ...Buffer.from('ingress-ws')]));
+  setTimeout(() => socket.end(Buffer.from([0x88, 0x00])), 25);
+});
+
+await new Promise((resolve, reject) => {
+  proxy.once('error', reject);
+  proxy.listen(0, '127.0.0.1', resolve);
+});
+const proxyPort = proxy.address().port;
+let browser;
+const downloads = [];
+try {
+  browser = await chromium.launch({ executablePath, headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+  const context = await browser.newContext({ acceptDownloads: true });
+  const page = await context.newPage();
+  page.on('download', (download) => downloads.push(download));
+  await page.goto(`http://127.0.0.1:${proxyPort}${prefix}/`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await page.waitForFunction(() => window.__OD_HA_EXPORT_BRIDGE_INSTALLED__ === true, null, { timeout: 15_000 });
+
+  const probes = await page.evaluate(async () => {
+    const fetched = await fetch('/__ha_probe/fetch').then((response) => response.json());
+    const xhr = await new Promise((resolve, reject) => {
+      const request = new XMLHttpRequest();
+      request.open('GET', '/__ha_probe/xhr');
+      request.onload = () => resolve(request.responseText);
+      request.onerror = reject;
+      request.send();
+    });
+    const sse = await new Promise((resolve, reject) => {
+      const source = new EventSource('/__ha_probe/events');
+      source.onmessage = (event) => { source.close(); resolve(event.data); };
+      source.onerror = reject;
+    });
+    const websocket = await new Promise((resolve, reject) => {
+      const socket = new WebSocket(`ws://${location.host}/__ha_probe/ws`);
+      socket.onmessage = (event) => { socket.close(); resolve(event.data); };
+      socket.onerror = reject;
+    });
+    return { fetched, xhr, sse, websocket };
+  });
+  assert.deepEqual(probes, {
+    fetched: { transport: 'fetch' },
+    xhr: 'xhr',
+    sse: 'ingress-sse',
+    websocket: 'ingress-ws',
+  });
+
+  const pdfDownloadPromise = page.waitForEvent('download', { timeout: 120_000 });
+  const pdfResponse = await page.evaluate(async () => {
+    const request = new Request(new URL('/api/projects/ha-smoke/export/pdf', location.origin), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-request-proof': 'browser-request' },
+      body: JSON.stringify({ fileName: 'deck.html', deck: true, title: 'Ingress browser' }),
+      credentials: 'same-origin',
+    });
+    const response = await fetch(request);
+    return response.json();
+  });
+  assert.deepEqual(pdfResponse, { ok: true });
+  const pdfDownload = await pdfDownloadPromise;
+  const pdfPath = await pdfDownload.path();
+  assert.ok(pdfPath);
+  assert.ok((await readFile(pdfPath)).subarray(0, 5).equals(Buffer.from('%PDF-')));
+
+  const imageDownloadPromise = page.waitForEvent('download', { timeout: 120_000 });
+  await page.evaluate(async () => {
+    const frame = document.createElement('iframe');
+    frame.src = '/api/projects/ha-smoke/raw/deck.html';
+    frame.hidden = true;
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.innerHTML = `
+      <input name="image-export-format" type="radio" value="png" checked>
+      <div class="modal-foot">
+        <button class="viewer-action primary" type="button">Save</button>
+        <button class="ghost-link button-like" type="button">Cancel</button>
+      </div>`;
+    document.body.append(frame, dialog);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    dialog.querySelector('.viewer-action.primary').click();
+  });
+  const imageDownload = await imageDownloadPromise;
+  const imagePath = await imageDownload.path();
+  assert.ok(imagePath);
+  assert.ok((await readFile(imagePath)).subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])));
+
+  for (const probePath of ['fetch', 'xhr', 'events', 'ws']) {
+    assert.ok(publicRequests.includes(`${prefix}/__ha_probe/${probePath}`), `${probePath} did not traverse the public HA prefix`);
+  }
+  assert.ok(publicRequests.some((value) => value.startsWith(`${prefix}/api/projects/ha-smoke/export/pdf-image`)));
+  assert.ok(publicRequests.some((value) => value.startsWith(`${prefix}/api/projects/ha-smoke/export/image`)));
+  assert.ok(downloads.length >= 2);
+  console.log('container browser ingress e2e: built UI injection, path stripping, fetch/XHR/SSE/WebSocket, PDF Request, and image action passed');
+} finally {
+  await browser?.close().catch(() => {});
+  await new Promise((resolve) => proxy.close(resolve));
+  for (const download of downloads) {
+    const filepath = await download.path().catch(() => null);
+    if (filepath) await rm(filepath, { force: true }).catch(() => {});
+  }
+}

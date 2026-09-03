@@ -4,15 +4,20 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {
+  assertCaptureBudget,
   canonicalizeOutputDir,
   chooseRenderMode,
   classifyIpAddress,
+  createByteBudget,
   confinedOutputPath,
   daemonOriginFromBaseHref,
   evaluateRequestPolicy,
   injectBaseHref,
   isLoopbackHttpUrl,
   planCapture,
+  RENDER_LIMITS,
+  runWithAbsoluteDeadline,
+  Semaphore,
   validateRendererInput,
 } from '../rootfs/opt/ha-opendesign/headless-renderer.mjs';
 
@@ -176,6 +181,55 @@ test('request policy rejects DNS names with any private answer and gates public 
     await evaluateRequestPolicy('https://public.example/image.png', { resolveHost: publicDns }),
     { allow: false, reason: 'external-network-disabled' },
   );
+});
+
+test('aggregate capture limits reject excessive slides and total pixels', () => {
+  assert.doesNotThrow(() => assertCaptureBudget({ count: 4, width: 1920, height: 1080, stitch: true }));
+  assert.throws(
+    () => assertCaptureBudget({ count: RENDER_LIMITS.MAX_SLIDES + 1, width: 320, height: 180 }),
+    /slide render limit/,
+  );
+  assert.throws(
+    () => assertCaptureBudget({ count: RENDER_LIMITS.MAX_SLIDES, width: 8192, height: 8192 }),
+    /aggregate pixel budget/,
+  );
+  assert.equal(RENDER_LIMITS.MAX_OUTPUT_BYTES, 128 * 1024 * 1024);
+  assert.equal(RENDER_LIMITS.MAX_REMOTE_FETCHES, 4);
+  assert.equal(RENDER_LIMITS.MAX_REMOTE_TOTAL_BYTES, 64 * 1024 * 1024);
+  const bytes = createByteBudget(10, 'focused byte budget');
+  assert.equal(bytes.consume(4), 4);
+  assert.equal(bytes.consume(6), 10);
+  assert.throws(() => bytes.consume(1), /focused byte budget exceeds 10 bytes/);
+});
+
+test('semaphore caps concurrency and releases queued jobs', async () => {
+  const semaphore = new Semaphore(2);
+  let active = 0;
+  let peak = 0;
+  const jobs = Array.from({ length: 8 }, (_value, index) => semaphore.run(async () => {
+    active += 1;
+    peak = Math.max(peak, active);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    active -= 1;
+    return index;
+  }));
+  assert.deepEqual(await Promise.all(jobs), [0, 1, 2, 3, 4, 5, 6, 7]);
+  assert.equal(peak, 2);
+});
+
+test('absolute deadline aborts work even when it remains active', async () => {
+  let observedAbort = false;
+  await assert.rejects(
+    runWithAbsoluteDeadline(async (signal) => {
+      await new Promise((resolve) => signal.addEventListener('abort', () => {
+        observedAbort = true;
+        resolve();
+      }, { once: true }));
+      await new Promise(() => {});
+    }, 10, 'focused deadline expired'),
+    /focused deadline expired/,
+  );
+  assert.equal(observedAbort, true);
 });
 
 test('capture planning covers one slide, all slides, stitching and pagination', () => {

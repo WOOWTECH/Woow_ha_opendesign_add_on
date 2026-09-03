@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -53,6 +54,43 @@ try {
     assert.deepEqual(imageDimensions(bytes, format), { width: 320, height: 360 }, `${format} must contain both stitched slides`);
   }
 
+  const websocketServer = createServer();
+  let websocketConnections = 0;
+  websocketServer.on('upgrade', (_request, socket) => {
+    websocketConnections += 1;
+    socket.destroy();
+  });
+  await new Promise((resolve, reject) => {
+    websocketServer.once('error', reject);
+    websocketServer.listen(0, '127.0.0.1', resolve);
+  });
+  try {
+    const websocketPort = websocketServer.address().port;
+    const websocketResult = await renderSlides({
+      html: `<script>new WebSocket('ws://127.0.0.1:${websocketPort}/renderer-ssrf')</script><main>blocked websocket</main>`,
+      outputDir: path.join(root, 'websocket-policy'),
+      baseHref: 'http://127.0.0.1:7456/',
+      width: 320,
+      height: 180,
+    });
+    assert.equal(websocketResult.ok, true, JSON.stringify(websocketResult));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(websocketConnections, 0, 'renderer Chromium must not reach a loopback WebSocket server');
+  } finally {
+    await new Promise((resolve) => websocketServer.close(resolve));
+  }
+
+  const oversizedDeck = await renderSlides({
+    html: Array.from({ length: 65 }, (_value, index) => `<section class="slide">${index}</section>`).join(''),
+    outputDir: path.join(root, 'oversized-deck'),
+    baseHref: 'http://127.0.0.1:7456/',
+    deck: true,
+    width: 320,
+    height: 180,
+  });
+  assert.equal(oversizedDeck.ok, false);
+  assert.match(oversizedDeck.error, /64-slide render limit/);
+
   const editable = await renderSlides({
     html: '<section class="slide">editable</section>',
     outputDir: path.join(root, 'editable'),
@@ -62,7 +100,7 @@ try {
   });
   assert.equal(editable.ok, false);
   assert.match(editable.error, /Editable PPTX is unsupported/);
-  console.log('container renderer e2e: two-slide PNG/JPEG stitching and editable PPTX rejection passed');
+  console.log('container renderer e2e: PNG/JPEG stitching, WebSocket SSRF block, slide limit, and editable PPTX rejection passed');
 } finally {
   await rm(root, { recursive: true, force: true });
 }

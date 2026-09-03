@@ -20,6 +20,7 @@ function browserRoot(nativeFetch, options = {}) {
     Blob,
     Element,
     MutationObserver: class { observe() {} },
+    Request,
     Response,
     URL,
     document: {
@@ -98,6 +99,40 @@ test('installed PDF wrapper downloads pdf-image bytes and returns the caller suc
   assert.deepEqual(await response.json(), { ok: true });
   assert.equal(downloads.length, 1);
   assert.equal(downloads[0].filename, 'deck.pdf');
+});
+
+test('PDF redirect preserves Request method, headers, body, credentials, and signal', async () => {
+  const calls = [];
+  const { root } = browserRoot(async (input, init) => {
+    calls.push({ input, init });
+    return new Response(new Blob(['%PDF-request'], { type: 'application/pdf' }), {
+      status: 200,
+      headers: { 'content-disposition': 'attachment; filename="request.pdf"' },
+    });
+  });
+  bridge.createForRoot(root).install();
+  const controller = new AbortController();
+  const request = new Request('http://ha.local/api/projects/project-1/export/pdf', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-request-proof': 'preserved' },
+    body: JSON.stringify({ fileName: 'request.html', deck: true }),
+    credentials: 'include',
+    signal: controller.signal,
+  });
+  const response = await root.fetch(request);
+  assert.deepEqual(await response.json(), { ok: true });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].init, undefined);
+  assert.ok(calls[0].input instanceof Request);
+  assert.equal(calls[0].input.url, 'http://ha.local/api/projects/project-1/export/pdf-image');
+  assert.equal(calls[0].input.method, 'POST');
+  assert.equal(calls[0].input.headers.get('content-type'), 'application/json');
+  assert.equal(calls[0].input.headers.get('x-request-proof'), 'preserved');
+  assert.equal(calls[0].input.credentials, 'include');
+  assert.equal(calls[0].input.signal.aborted, false);
+  controller.abort();
+  assert.equal(calls[0].input.signal.aborted, true);
+  assert.deepEqual(JSON.parse(await calls[0].input.text()), { fileName: 'request.html', deck: true });
 });
 
 test('installed image dialog bridge bypasses web fallback and downloads headless JPEG', async () => {

@@ -12,4 +12,8 @@
 - Harden renderer output confinement against symlinked output/export roots and block model-authored renderer traffic from HA/private/link-local/loopback networks except the exact OpenDesign origin.
 - Bridge HA browser PDF and PNG/JPEG actions to the working screenshot binary endpoints; remove the misleading desktop vector-PDF injection.
 - Bound launcher shutdown with a five-second TERM grace followed by KILL/reap.
-- Gate the publish matrix on a real amd64 container smoke test covering health, restart persistence, UID/paths, local-runtime absence, installed Chromium rendering, and upstream image/PDF/PPTX assembly without BYOK.
+- Gate the architecture matrix on a real amd64 container smoke test covering health, restart persistence, UID/paths, local-runtime absence, installed Chromium rendering, and upstream image/PDF/PPTX assembly without BYOK.
+- Block renderer WebSockets before page creation; serialize render jobs; add absolute abortable deadlines plus slide, aggregate pixel/output-byte, remote-byte, and remote-fetch concurrency limits; stitch slides without concurrent file loading.
+- Preserve complete `Request` semantics when redirecting browser PDF exports.
+- Exercise injected ingress/export scripts in Chromium through a Supervisor-style path-stripping proxy, including fetch, XHR, SSE, WebSocket, PDF, and image actions.
+- Pin the upstream multi-architecture image by digest, pin GitHub Actions by commit, explicitly install/check bash, and publish architecture version tags only from an exactly matching release tag.

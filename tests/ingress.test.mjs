@@ -50,6 +50,7 @@ test('early shim covers root-relative streaming, navigation, and dynamic URLs', 
     "wrapWorker('Worker')",
   ]) assert.ok(shim.includes(token), `missing shim behavior: ${token}`);
   assert.ok(shim.includes("startsWith('/api/hassio_ingress/')"), 'must prevent ingress double-prefixing');
+  assert.ok(shim.includes('new Request(new URL(next, input.url).href, input)'), 'Request rewriting must use an absolute replacement URL');
   assert.match(shim, /url\.protocol !== 'http:' && url\.protocol !== 'https:'/,
     'blob/data/about URLs used by browser downloads must not be ingress-rewritten');
   assert.ok(shim.includes('Service workers are disabled'), 'must not register a root-scoped service worker on HA');

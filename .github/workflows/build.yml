@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -20,9 +19,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22.23.0"
           cache: npm
@@ -32,6 +31,16 @@ jobs:
           python3 -m pip install --break-system-packages PyYAML==6.0.2
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends nginx shellcheck
+      - name: Validate release tag
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          version=$(awk -F'"' '/^version:/ { print $2 }' config.yaml)
+          expected="v${version}"
+          if [[ "${GITHUB_REF_NAME}" != "${expected}" ]]; then
+            echo "Release tag ${GITHUB_REF_NAME} does not match config.yaml version ${expected}" >&2
+            exit 1
+          fi
       - name: Validate
         run: ./tests/run.sh
 
@@ -40,15 +49,15 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
       - name: Install PDF inspection tool
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends poppler-utils
       - name: Build amd64 smoke image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
           context: .
           platforms: linux/amd64
@@ -56,7 +65,7 @@ jobs:
           push: false
           tags: woow-ha-opendesign:smoke
           build-args: |
-            BUILD_FROM=ghcr.io/nexu-io/od:0.21.1
+            BUILD_FROM=ghcr.io/nexu-io/od:0.21.1@sha256:441daca881e699657bacf28e0c27b16cd6be551dfff4bd63368dd74bec581f39
             BUILD_ARCH=amd64
             BUILD_VERSION=0.1.0-smoke
             BUILD_DESCRIPTION=OpenDesign 0.21.1 container smoke
@@ -65,12 +74,15 @@ jobs:
             BUILD_REPOSITORY=${{ github.repository }}
           cache-from: type=gha,scope=opendesign-smoke-amd64
           cache-to: type=gha,scope=opendesign-smoke-amd64,mode=max
-      - name: Container, renderer, and HTTP export smoke
+      - name: Container, renderer, and browser ingress smoke
         run: ./tests/container-smoke.sh woow-ha-opendesign:smoke
 
   build:
     needs: [validate, smoke]
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -81,33 +93,39 @@ jobs:
             platform: linux/arm64
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      - name: Read add-on version
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Read release metadata
         id: metadata
         shell: bash
         run: |
-          echo "version=$(awk -F'"' '/^version:/ { print $2 }' config.yaml)" >> "$GITHUB_OUTPUT"
+          version=$(awk -F'"' '/^version:/ { print $2 }' config.yaml)
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == "v${version}" ]]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@53851d14592bedcffcf25ea515637cff71ef929a # v3.3.0
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
       - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        if: steps.metadata.outputs.publish == 'true'
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build architecture image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
           context: .
           platforms: ${{ matrix.platform }}
-          push: ${{ github.event_name != 'pull_request' }}
+          push: ${{ steps.metadata.outputs.publish == 'true' }}
           provenance: false
           tags: ghcr.io/woowtech/woow-ha-opendesign-${{ matrix.arch }}:${{ steps.metadata.outputs.version }}
           build-args: |
-            BUILD_FROM=ghcr.io/nexu-io/od:0.21.1
+            BUILD_FROM=ghcr.io/nexu-io/od:0.21.1@sha256:441daca881e699657bacf28e0c27b16cd6be551dfff4bd63368dd74bec581f39
             BUILD_ARCH=${{ matrix.arch }}
             BUILD_VERSION=${{ steps.metadata.outputs.version }}
             BUILD_DATE=${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}

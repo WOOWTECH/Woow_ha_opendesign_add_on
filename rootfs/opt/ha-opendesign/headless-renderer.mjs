@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { lookup } from 'node:dns/promises';
-import { lstat, mkdir, readFile, realpath } from 'node:fs/promises';
+import { lstat, mkdir, readFile, realpath, stat, unlink } from 'node:fs/promises';
 import http from 'node:http';
 import https from 'node:https';
 import { isIP } from 'node:net';
@@ -10,12 +10,124 @@ const DEFAULT_WIDTH = 1440;
 const DEFAULT_HEIGHT = 1000;
 const MAX_DIMENSION = 8192;
 const MAX_DOCUMENT_HEIGHT = 30_000;
-const MAX_PIXELS = 120_000_000;
+const MAX_PIXELS = 48_000_000;
+const MAX_SLIDES = 64;
+const MAX_OUTPUT_BYTES = 128 * 1024 * 1024;
 const MAX_HTML_BYTES = 32 * 1024 * 1024;
 const RENDER_TIMEOUT_MS = 120_000;
+const REMOTE_FETCH_TIMEOUT_MS = 15_000;
+const MAX_REMOTE_FETCHES = 4;
 const MAX_REMOTE_ASSET_BYTES = 32 * 1024 * 1024;
+const MAX_REMOTE_TOTAL_BYTES = 64 * 1024 * 1024;
 const SLIDE_SELECTOR = '.slide, [data-screen-label], .deck-slide, .ppt-slide';
 const CHROME_SELECTOR = '.progress-bar, .notes-overlay, aside.notes, .speaker-notes, .deck-nav, .deck-hint, .deck-counter';
+
+function abortError(signal, fallback = 'operation aborted') {
+  if (signal?.reason instanceof Error) return signal.reason;
+  const error = new Error(signal?.reason ? String(signal.reason) : fallback);
+  error.name = 'AbortError';
+  return error;
+}
+
+async function waitWithSignal(promise, signal) {
+  if (!signal) return promise;
+  if (signal.aborted) throw abortError(signal);
+  let onAbort;
+  const aborted = new Promise((_resolve, reject) => {
+    onAbort = () => reject(abortError(signal));
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([promise, aborted]);
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
+}
+
+export class Semaphore {
+  constructor(maximum) {
+    if (!Number.isInteger(maximum) || maximum < 1) throw new Error('semaphore maximum must be a positive integer');
+    this.maximum = maximum;
+    this.active = 0;
+    this.waiters = [];
+  }
+
+  async acquire(signal) {
+    if (signal?.aborted) throw abortError(signal);
+    if (this.active < this.maximum) {
+      this.active += 1;
+      return this.release.bind(this);
+    }
+    return new Promise((resolve, reject) => {
+      const waiter = { resolve, reject, signal, onAbort: null };
+      waiter.onAbort = () => {
+        const index = this.waiters.indexOf(waiter);
+        if (index >= 0) this.waiters.splice(index, 1);
+        reject(abortError(signal));
+      };
+      signal?.addEventListener('abort', waiter.onAbort, { once: true });
+      this.waiters.push(waiter);
+    });
+  }
+
+  release() {
+    const waiter = this.waiters.shift();
+    if (waiter) {
+      waiter.signal?.removeEventListener('abort', waiter.onAbort);
+      waiter.resolve(this.release.bind(this));
+      return;
+    }
+    this.active -= 1;
+  }
+
+  async run(task, signal) {
+    const release = await this.acquire(signal);
+    try {
+      return await task();
+    } finally {
+      release();
+    }
+  }
+}
+
+export async function runWithAbsoluteDeadline(task, timeoutMs, message = 'operation deadline exceeded') {
+  const controller = new AbortController();
+  let rejectDeadline;
+  const deadline = new Promise((_resolve, reject) => { rejectDeadline = reject; });
+  const timer = setTimeout(() => {
+    const error = new Error(message);
+    controller.abort(error);
+    rejectDeadline(error);
+  }, timeoutMs);
+  try {
+    return await Promise.race([Promise.resolve().then(() => task(controller.signal)), deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export function assertCaptureBudget({ count, width, height, stitch = false }) {
+  if (!Number.isInteger(count) || count < 1) throw new Error('capture count must be a positive integer');
+  if (count > MAX_SLIDES) throw new Error(`deck exceeds the ${MAX_SLIDES}-slide render limit`);
+  const multiplier = stitch && count > 1 ? 2 : 1;
+  if (BigInt(count) * BigInt(width) * BigInt(height) * BigInt(multiplier) > BigInt(MAX_PIXELS)) {
+    throw new Error('render exceeds the aggregate pixel budget');
+  }
+}
+
+export function createByteBudget(maximum, label) {
+  let used = 0;
+  return {
+    consume(bytes) {
+      used += bytes;
+      if (used > maximum) throw new Error(`${label} exceeds ${maximum} bytes`);
+      return used;
+    },
+    get used() { return used; },
+  };
+}
+
+const renderSemaphore = new Semaphore(1);
 
 function escapeHtmlAttribute(value) {
   return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -311,8 +423,12 @@ export async function evaluateRequestPolicy(value, options) {
 
   let addresses;
   try {
-    addresses = await (options?.resolveHost ?? lookup)(url.hostname, { all: true, verbatim: true });
-  } catch {
+    addresses = await waitWithSignal(
+      (options?.resolveHost ?? lookup)(url.hostname, { all: true, verbatim: true }),
+      options?.signal,
+    );
+  } catch (error) {
+    if (options?.signal?.aborted) throw error;
     return { allow: false, reason: 'dns-failed' };
   }
   if (!Array.isArray(addresses) || addresses.length === 0) return { allow: false, reason: 'dns-empty' };
@@ -325,7 +441,8 @@ export async function evaluateRequestPolicy(value, options) {
     : { allow: false, reason: 'external-network-disabled' };
 }
 
-async function fulfillPinnedPublicRequest(route, address) {
+async function fulfillPinnedPublicRequest(route, address, { signal, totalBudget }) {
+  if (signal?.aborted) throw abortError(signal);
   const request = route.request();
   const url = new URL(request.url());
   const headers = { ...request.headers(), host: url.host };
@@ -338,6 +455,16 @@ async function fulfillPinnedPublicRequest(route, address) {
     : url.hostname;
   await new Promise((resolve, reject) => {
     const client = url.protocol === 'https:' ? https : http;
+    let settled = false;
+    let incoming;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(absoluteDeadline);
+      signal?.removeEventListener('abort', onAbort);
+      if (error) reject(error);
+      else resolve();
+    };
     const outgoing = client.request({
       family: address.family || isIP(address.address),
       headers,
@@ -346,20 +473,23 @@ async function fulfillPinnedPublicRequest(route, address) {
       path: `${url.pathname}${url.search}`,
       port: url.port || undefined,
       ...(url.protocol === 'https:' && !isIP(urlHostname) ? { servername: urlHostname } : {}),
-    }, (incoming) => {
+    }, (response) => {
+      incoming = response;
       const chunks = [];
       let total = 0;
-      incoming.on('data', (chunk) => {
-        total += chunk.length;
-        if (total > MAX_REMOTE_ASSET_BYTES) {
-          incoming.destroy(new Error('remote renderer asset exceeds 32 MiB'));
-          return;
+      response.on('data', (chunk) => {
+        try {
+          total += chunk.length;
+          if (total > MAX_REMOTE_ASSET_BYTES) throw new Error('remote renderer asset exceeds 32 MiB');
+          totalBudget.consume(chunk.length);
+          chunks.push(chunk);
+        } catch (error) {
+          response.destroy(error);
         }
-        chunks.push(chunk);
       });
-      incoming.on('error', reject);
-      incoming.on('end', async () => {
-        const responseHeaders = Object.fromEntries(Object.entries(incoming.headers)
+      response.on('error', finish);
+      response.on('end', async () => {
+        const responseHeaders = Object.fromEntries(Object.entries(response.headers)
           .filter(([name, value]) => value != null
             && !['connection', 'content-length', 'transfer-encoding'].includes(name))
           .map(([name, value]) => [name, Array.isArray(value) ? value.join(', ') : value]));
@@ -367,16 +497,33 @@ async function fulfillPinnedPublicRequest(route, address) {
           await route.fulfill({
             body: Buffer.concat(chunks),
             headers: responseHeaders,
-            status: incoming.statusCode ?? 502,
+            status: response.statusCode ?? 502,
           });
-          resolve();
+          finish();
         } catch (error) {
-          reject(error);
+          finish(error);
         }
       });
     });
-    outgoing.setTimeout(15_000, () => outgoing.destroy(new Error('remote renderer asset timed out')));
-    outgoing.on('error', reject);
+    const onAbort = () => {
+      const error = abortError(signal);
+      incoming?.destroy(error);
+      outgoing.destroy(error);
+      finish(error);
+    };
+    const absoluteDeadline = setTimeout(() => {
+      const error = new Error('remote renderer asset deadline exceeded');
+      incoming?.destroy(error);
+      outgoing.destroy(error);
+      finish(error);
+    }, REMOTE_FETCH_TIMEOUT_MS);
+    absoluteDeadline.unref?.();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    outgoing.on('error', finish);
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
     if (body) outgoing.write(body);
     outgoing.end();
   });
@@ -478,24 +625,48 @@ async function stageSlide(page, index, size) {
   }, { selector: SLIDE_SELECTOR, chromeSelector: CHROME_SELECTOR, index, size });
 }
 
-async function stitchFiles(browser, files, outputDir, format, width, height) {
+async function recordOutputFile(filepath, outputBudget) {
+  const metadata = await stat(filepath);
+  try {
+    outputBudget.consume(metadata.size);
+  } catch (error) {
+    await unlink(filepath).catch(() => {});
+    throw error;
+  }
+}
+
+async function stitchFiles(context, files, outputDir, format, width, height, outputBudget) {
   const scale = Math.min(1, MAX_DOCUMENT_HEIGHT / (height * files.length), Math.sqrt(MAX_PIXELS / (width * height * files.length)));
   const outputWidth = Math.max(1, Math.floor(width * scale));
-  const outputHeight = Math.max(1, Math.floor(height * scale)) * files.length;
-  const sources = await Promise.all(files.map(async (file) => `data:image/${format};base64,${(await readFile(file)).toString('base64')}`));
-  const page = await browser.newPage({ viewport: { width: outputWidth, height: Math.min(outputHeight, DEFAULT_HEIGHT) } });
+  const rowHeight = Math.max(1, Math.floor(height * scale));
+  const outputHeight = rowHeight * files.length;
+  const page = await context.newPage({ viewport: { width: outputWidth, height: Math.min(outputHeight, DEFAULT_HEIGHT) } });
   try {
-    await page.setContent(`<style>html,body{margin:0;background:#fff}img{display:block;width:${outputWidth}px;height:${Math.floor(height * scale)}px}</style>${sources.map((src) => `<img src="${src}">`).join('')}`);
+    await page.setContent(`<style>html,body{margin:0;background:#fff}img{display:block;width:${outputWidth}px;height:${rowHeight}px}</style>`);
+    // Read and decode one source at a time. Promise.all retained every encoded
+    // slide in Node memory and caused large decks to spike HA memory usage.
+    for (const file of files) {
+      const source = `data:image/${format};base64,${(await readFile(file)).toString('base64')}`;
+      await page.evaluate(async ({ source, outputWidth, rowHeight }) => {
+        const image = document.createElement('img');
+        image.width = outputWidth;
+        image.height = rowHeight;
+        image.src = source;
+        await image.decode();
+        document.body.appendChild(image);
+      }, { source, outputWidth, rowHeight });
+    }
     const ext = format === 'jpeg' ? 'jpg' : 'png';
     const filepath = confinedOutputPath(outputDir, `stitched.${ext}`);
     await page.screenshot({ ...screenshotOptions(filepath, format), fullPage: true });
+    await recordOutputFile(filepath, outputBudget);
     return { files: [filepath], width: outputWidth, height: outputHeight };
   } finally {
     await page.close();
   }
 }
 
-async function captureDeck(browser, page, input, count) {
+async function captureDeck(context, page, input, count, outputBudget) {
   const requested = { width: input.width, height: input.height };
   const size = input.width !== DEFAULT_WIDTH || input.height !== DEFAULT_HEIGHT
     ? requested
@@ -505,6 +676,7 @@ async function captureDeck(browser, page, input, count) {
   if (plan.errorCode) {
     return { ok: false, error: `slide index ${input.index} is out of range (deck has ${count} slide(s))`, errorCode: plan.errorCode };
   }
+  assertCaptureBudget({ count: plan.indices.length, width: size.width, height: size.height, stitch: plan.stitch });
   const files = [];
   const ext = input.pageImageFormat === 'jpeg' ? 'jpg' : 'png';
   for (const index of plan.indices) {
@@ -512,16 +684,17 @@ async function captureDeck(browser, page, input, count) {
     await page.waitForTimeout(50);
     const filepath = confinedOutputPath(input.outputDir, `slide-${index}.${ext}`);
     await page.screenshot({ ...screenshotOptions(filepath, input.pageImageFormat), clip: { x: 0, y: 0, width: size.width, height: size.height } });
+    await recordOutputFile(filepath, outputBudget);
     files.push(filepath);
   }
   if (plan.stitch && files.length > 1) {
-    const stitched = await stitchFiles(browser, files, input.outputDir, input.pageImageFormat, size.width, size.height);
+    const stitched = await stitchFiles(context, files, input.outputDir, input.pageImageFormat, size.width, size.height, outputBudget);
     return { ok: true, slideFiles: stitched.files, width: stitched.width, height: stitched.height, mode: 'deck' };
   }
   return { ok: true, slideFiles: files, width: size.width, height: size.height, mode: 'deck' };
 }
 
-async function capturePage(page, input) {
+async function capturePage(page, input, outputBudget) {
   await page.setViewportSize({ width: input.width, height: input.height });
   const dimensions = await page.evaluate(() => ({
     width: Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth ?? 0, 1),
@@ -531,6 +704,7 @@ async function capturePage(page, input) {
     return { ok: false, error: 'page exceeds the bounded capture size', errorCode: 'PAGE_TOO_TALL' };
   }
   const plan = planCapture({ mode: 'page', paginate: input.paginate, documentHeight: dimensions.height, viewportHeight: input.height });
+  assertCaptureBudget({ count: 1, width: dimensions.width, height: dimensions.height });
   const files = [];
   const ext = input.pageImageFormat === 'jpeg' ? 'jpg' : 'png';
   for (let index = 0; index < plan.pages.length; index += 1) {
@@ -541,55 +715,72 @@ async function capturePage(page, input) {
     } else {
       await page.screenshot({ ...screenshotOptions(filepath, input.pageImageFormat), fullPage: true });
     }
+    await recordOutputFile(filepath, outputBudget);
     files.push(filepath);
   }
   return { ok: true, slideFiles: files, width: dimensions.width, height: input.paginate ? input.height : dimensions.height, mode: 'page' };
 }
 
-export async function renderSlides(rawInput) {
+async function renderSlidesExclusive(rawInput, signal) {
   let browser;
-  const deadline = setTimeout(() => void browser?.close().catch(() => {}), RENDER_TIMEOUT_MS);
-  deadline.unref?.();
+  const closeOnAbort = () => void browser?.close().catch(() => {});
+  signal.addEventListener('abort', closeOnAbort, { once: true });
   try {
     const input = validateRendererInput(rawInput);
     if (input.editable === true) {
       return { ok: false, error: 'Editable PPTX is unsupported in the Home Assistant add-on; choose screenshot PPTX.', errorCode: 'RENDER_FAILED' };
     }
-    input.outputDir = await canonicalizeOutputDir(input.outputDir);
+    input.outputDir = await waitWithSignal(canonicalizeOutputDir(input.outputDir), signal);
     const { chromium } = await import('playwright-core');
-    browser = await chromium.launch({
+    const launch = chromium.launch({
       executablePath: executablePath(),
       headless: true,
       args: ['--no-sandbox', '--disable-dev-shm-usage', '--font-render-hinting=none'],
     });
+    launch.then((launched) => {
+      if (signal.aborted) void launched.close().catch(() => {});
+    }, () => {});
+    browser = await waitWithSignal(launch, signal);
     const context = await browser.newContext({
       viewport: { width: input.width, height: input.height },
       serviceWorkers: 'block',
     });
     const daemonOrigin = daemonOriginFromBaseHref(input.baseHref);
+    const remoteFetches = new Semaphore(MAX_REMOTE_FETCHES);
+    const remoteBudget = createByteBudget(MAX_REMOTE_TOTAL_BYTES, 'aggregate remote renderer resources');
+    const outputBudget = createByteBudget(MAX_OUTPUT_BYTES, 'aggregate renderer output');
+    // Block every WebSocket before creating any page. Chromium's ordinary
+    // request routing does not cover ws/wss handshakes.
+    await context.routeWebSocket('**/*', (webSocketRoute) => {
+      webSocketRoute.close({ code: 1008, reason: 'WebSockets disabled in renderer' });
+    });
     // Install the policy on the context before creating a page so workers and
     // the first navigation of any model-opened popup cannot bypass it.
     await context.route('**/*', async (route) => {
-      let validatedAddresses = [];
-      const policy = await evaluateRequestPolicy(route.request().url(), {
-        daemonOrigin,
-        allowPublicHttpAssets: true,
-        onValidatedAddresses: (addresses) => { validatedAddresses = addresses; },
-      });
-      if (!policy.allow) {
-        await route.abort('blockedbyclient');
-      } else if (policy.reason === 'validated-public-address' || policy.reason === 'validated-public-dns') {
-        // Connect to the address that was classified, while retaining the URL
-        // host for Host/SNI. Chromium must not perform a second, rebindable DNS
-        // lookup after policy approval.
-        try {
+      try {
+        let validatedAddresses = [];
+        const policy = await evaluateRequestPolicy(route.request().url(), {
+          daemonOrigin,
+          allowPublicHttpAssets: true,
+          signal,
+          onValidatedAddresses: (addresses) => { validatedAddresses = addresses; },
+        });
+        if (!policy.allow) {
+          await route.abort('blockedbyclient');
+        } else if (policy.reason === 'validated-public-address' || policy.reason === 'validated-public-dns') {
+          // Connect to the address that was classified, while retaining the URL
+          // host for Host/SNI. Chromium must not perform a second, rebindable DNS
+          // lookup after policy approval.
           const address = validatedAddresses.find((entry) => entry.family === 4) ?? validatedAddresses[0];
-          await fulfillPinnedPublicRequest(route, address);
-        } catch {
-          await route.abort('failed').catch(() => {});
+          await remoteFetches.run(
+            () => fulfillPinnedPublicRequest(route, address, { signal, totalBudget: remoteBudget }),
+            signal,
+          );
+        } else {
+          await route.continue();
         }
-      } else {
-        await route.continue();
+      } catch {
+        await route.abort('failed').catch(() => {});
       }
     });
     const page = await context.newPage();
@@ -600,15 +791,39 @@ export async function renderSlides(rawInput) {
     await page.setContent(injectBaseHref(input.html, input.baseHref), { waitUntil: 'domcontentloaded', timeout: 15_000 });
     await settleDocument(page);
     const count = await realSlides(page);
+    if (count > MAX_SLIDES) throw new Error(`deck exceeds the ${MAX_SLIDES}-slide render limit`);
     const mode = chooseRenderMode(input.deck, count);
     if (mode === 'missing-deck') return { ok: false, error: 'no slide surfaces found in this deck', errorCode: 'NO_SLIDES' };
-    return mode === 'deck' ? await captureDeck(browser, page, input, count) : await capturePage(page, input);
-  } catch (error) {
-    return { ok: false, error: `headless renderer failed: ${error instanceof Error ? error.message : String(error)}`, errorCode: 'RENDER_FAILED' };
+    return mode === 'deck'
+      ? await captureDeck(context, page, input, count, outputBudget)
+      : await capturePage(page, input, outputBudget);
   } finally {
-    clearTimeout(deadline);
+    signal.removeEventListener('abort', closeOnAbort);
     await browser?.close().catch(() => {});
   }
 }
 
-export const RENDER_LIMITS = Object.freeze({ RENDER_TIMEOUT_MS, MAX_DIMENSION, MAX_DOCUMENT_HEIGHT, MAX_PIXELS });
+export async function renderSlides(rawInput) {
+  try {
+    return await runWithAbsoluteDeadline(
+      (signal) => renderSemaphore.run(() => renderSlidesExclusive(rawInput, signal), signal),
+      RENDER_TIMEOUT_MS,
+      `headless renderer exceeded its ${RENDER_TIMEOUT_MS}ms deadline`,
+    );
+  } catch (error) {
+    return { ok: false, error: `headless renderer failed: ${error instanceof Error ? error.message : String(error)}`, errorCode: 'RENDER_FAILED' };
+  }
+}
+
+export const RENDER_LIMITS = Object.freeze({
+  RENDER_TIMEOUT_MS,
+  REMOTE_FETCH_TIMEOUT_MS,
+  MAX_DIMENSION,
+  MAX_DOCUMENT_HEIGHT,
+  MAX_PIXELS,
+  MAX_SLIDES,
+  MAX_OUTPUT_BYTES,
+  MAX_REMOTE_FETCHES,
+  MAX_REMOTE_ASSET_BYTES,
+  MAX_REMOTE_TOTAL_BYTES,
+});

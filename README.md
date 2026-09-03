@@ -39,14 +39,14 @@ A PID-1 launcher starts nginx and OpenDesign, forwards termination, and stops th
 ./tests/run.sh
 ```
 
-The local suite requires Node.js and Python 3 with PyYAML, but not Docker. It validates metadata, forbidden host/runtime coupling, JavaScript and shell syntax, renderer/security helpers, export bridges, and ingress rewrite fixtures. CI additionally builds an amd64 image and runs `tests/container-smoke.sh` before the architecture publish matrix: real health polling, restart persistence, UID/path/CLI checks, Chromium PNG/JPEG rendering, editable-PPTX rejection, and upstream HTTP screenshot PDF/PPTX assembly.
+The local suite requires Node.js and Python 3 with PyYAML, but not Docker. It validates metadata, forbidden host/runtime coupling, JavaScript and shell syntax, renderer/security helpers, export bridges, and ingress rewrite fixtures. CI additionally builds an amd64 image and runs `tests/container-smoke.sh` before the architecture matrix: a real Chromium session traverses a Supervisor-style path-stripping proxy and exercises the injected fetch/XHR/SSE/WebSocket and PDF/image bridges, alongside health, persistence, renderer, and HTTP export checks. `amd64` and `aarch64` images are published only by a `v<config-version>` Git tag.
 
 ## Security notes
 
 Access control is delegated to authenticated HA Ingress. Anyone allowed to open the add-on has OpenDesign access. Provider calls still leave the browser/daemon for the provider selected by the user. Browser-local keys do not follow a user to another browser and do not survive browser-storage clearing.
 
-Renderer HTML is model-generated, so Chromium applies a request policy before every load: it allows `data:`, `blob:`, `about:`, the exact OpenDesign loopback origin used for project assets, and public HTTP(S) addresses only after DNS/IP validation. It blocks Supervisor, metadata/link-local, RFC1918, CGNAT, other loopback ports, and IPv6 private/link-local destinations. System fonts keep CJK/emoji capture independent of remote font CDNs.
+Renderer HTML is model-generated, so Chromium applies a request policy before every load: it allows `data:`, `blob:`, `about:`, the exact OpenDesign loopback origin used for project assets, and public HTTP(S) addresses only after DNS/IP validation and pinned connection. It blocks all WebSockets plus Supervisor, metadata/link-local, RFC1918, CGNAT, other loopback ports, and IPv6 private/link-local destinations. Render jobs are serialized and bounded by an absolute deadline, slide/pixel/output-byte budgets, and capped remote-fetch concurrency and bytes. System fonts keep CJK/emoji capture independent of remote font CDNs.
 
 ## Upstream and license
 
-The runtime derives from `ghcr.io/nexu-io/od:0.21.1`. OpenDesign has its own upstream licensing and notices. The add-on packaging and integration code in this repository is MIT licensed; see [LICENSE](LICENSE).
+The runtime derives from `ghcr.io/nexu-io/od:0.21.1`, pinned by digest in all build paths. OpenDesign has its own upstream licensing and notices. The add-on packaging and integration code in this repository is MIT licensed; see [LICENSE](LICENSE).
