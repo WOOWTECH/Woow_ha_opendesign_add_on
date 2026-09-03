@@ -23,9 +23,14 @@ RUN apk add --no-cache \
     && rm -rf /etc/nginx/http.d/* /var/cache/apk/*
 
 COPY runtime/package.json runtime/package-lock.json /opt/ha-opendesign/
-RUN npm ci --omit=dev --prefix /opt/ha-opendesign \
-    && npm cache clean --force \
+# Home Assistant Supervisor's BuildKit builder may supply a reduced PATH even
+# though the pinned upstream image installs Node/npm under /usr/local/bin.
+# Use the absolute npm path so local Supervisor builds match ordinary Docker.
+RUN /usr/local/bin/npm ci --omit=dev --prefix /opt/ha-opendesign \
+    && /usr/local/bin/npm cache clean --force \
     && test "$(id -u open-design)" = "1001" \
+    && test -x /usr/local/bin/node \
+    && test -x /usr/local/bin/npm \
     && command -v bash \
     && command -v chromium-browser \
     && command -v nginx

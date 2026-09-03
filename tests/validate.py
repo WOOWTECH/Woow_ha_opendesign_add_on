@@ -65,7 +65,8 @@ check("OD_BIND_HOST=127.0.0.1" in dockerfile, "Dockerfile must set loopback bind
 check("USER open-design" in dockerfile, "final runtime user must be open-design (UID 1001 upstream)")
 for expected in ["bash", "chromium", "font-noto-cjk", "font-noto-emoji", "fontconfig", "nginx"]:
     check(expected in dockerfile, f"expected image package missing: {expected}")
-check("npm ci --omit=dev" in dockerfile, "locked production npm install required")
+check("/usr/local/bin/npm ci --omit=dev" in dockerfile, "locked production npm install must use the upstream absolute npm path for HA BuildKit")
+check("test -x /usr/local/bin/npm" in dockerfile, "image build must verify the absolute npm executable")
 check("startServer" in entry and "desktopSlideRenderer: renderSlides" in entry, "slide renderer injection missing")
 check("desktopPdfExporter" not in entry and "exportPdf" not in entry, "misleading desktop vector PDF exporter must not be injected")
 check("host = '127.0.0.1'" in entry, "OpenDesign entry must bind loopback")
