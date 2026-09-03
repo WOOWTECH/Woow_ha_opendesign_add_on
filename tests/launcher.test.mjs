@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, stat, symlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
 const launcher = await readFile(new URL('../rootfs/usr/local/bin/ha-opendesign', import.meta.url), 'utf8');
@@ -14,6 +16,31 @@ test('launcher bounds TERM shutdown before KILL and reap', () => {
   assert.ok(term >= 0 && deadline > term && kill > deadline && reap > kill, 'shutdown order must be TERM, bounded poll, KILL, reap');
   assert.match(launcher, /while \(\( SECONDS < deadline \)\)/);
   assert.doesNotMatch(launcher.slice(term, kill), /wait "\$pid"/, 'must not block in wait during the grace period');
+});
+
+test('privileged directory preparation rejects symlinks without touching their target', async () => {
+  const start = launcher.indexOf('prepare_owned_dir() {');
+  const end = launcher.indexOf('\n}\n\nif [[ $(id -u)', start) + 2;
+  assert.ok(start >= 0 && end > start);
+  const prepareOwnedDir = launcher.slice(start, end);
+  const root = await mkdtemp(path.join(tmpdir(), 'ha-opendesign-launcher-'));
+  const outside = path.join(root, 'outside');
+  const link = path.join(root, 'runtime-link');
+  await mkdir(outside, { mode: 0o711 });
+  await symlink(outside, link);
+  const before = await stat(outside);
+  try {
+    const harness = `set -Eeuo pipefail\n${prepareOwnedDir}\nprepare_owned_dir "$1"`;
+    const result = spawnSync('bash', ['-c', harness, 'launcher-test', link], { encoding: 'utf8' });
+    assert.equal(result.status, 78, result.stderr);
+    assert.match(result.stderr, /refusing symbolic-link runtime directory/);
+    const after = await stat(outside);
+    assert.equal(after.uid, before.uid);
+    assert.equal(after.gid, before.gid);
+    assert.equal(after.mode, before.mode);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('launcher shutdown actually kills and reaps a TERM-resistant child after grace', () => {

@@ -48,6 +48,30 @@ terminate_children() {
 
 trap terminate_children TERM INT
 
+prepare_owned_dir() {
+  local dir=$1
+  if [[ -L "$dir" ]]; then
+    echo "[ha-opendesign] refusing symbolic-link runtime directory: $dir" >&2
+    exit 78
+  fi
+  if [[ -e "$dir" ]]; then
+    if [[ ! -d "$dir" ]]; then
+      echo "[ha-opendesign] runtime path is not a directory: $dir" >&2
+      exit 78
+    fi
+  else
+    # Parents are prepared first, so plain mkdir never traverses a child path
+    # that has not already passed the no-symlink check.
+    mkdir -- "$dir"
+  fi
+  if [[ -L "$dir" || ! -d "$dir" ]]; then
+    echo "[ha-opendesign] runtime directory changed during validation: $dir" >&2
+    exit 78
+  fi
+  # -h/--no-dereference prevents a late symlink swap from changing its target.
+  chown -h open-design:open-design "$dir"
+}
+
 if [[ $(id -u) -ne 0 ]]; then
   echo "[ha-opendesign] launcher must start as root to prepare the HA /data mount" >&2
   exit 78
@@ -65,9 +89,16 @@ owned_dirs=(
   "$NGINX_TMP/uwsgi"
   "$NGINX_TMP/scgi"
 )
-mkdir -p "${owned_dirs[@]}"
-chown open-design:open-design "${owned_dirs[@]}"
-chmod 0750 "$DATA_DIR" "$DATA_DIR/home" "$DATA_DIR/export-render" "$DATA_DIR/export-pdf"
+for dir in "${owned_dirs[@]}"; do
+  prepare_owned_dir "$dir"
+done
+for dir in "$DATA_DIR" "$DATA_DIR/home" "$DATA_DIR/export-render" "$DATA_DIR/export-pdf"; do
+  [[ ! -L "$dir" && -d "$dir" ]] || {
+    echo "[ha-opendesign] refusing unsafe chmod target: $dir" >&2
+    exit 78
+  }
+  chmod 0750 "$dir"
+done
 
 export OD_DATA_DIR="$DATA_DIR"
 export OD_BIND_HOST=127.0.0.1

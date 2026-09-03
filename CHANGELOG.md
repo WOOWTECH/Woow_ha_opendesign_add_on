@@ -26,3 +26,4 @@
 - Route nginx errors to its inherited `stderr` descriptor and disable access-log reopening after the UID drop, matching HA Supervisor's protected log pipes.
 - Preserve all slide siblings during capture so structural CSS selectors such as `:first-of-type` and `:last-of-type` render distinct slides instead of duplicating the last slide's styling.
 - Harden the container browser harness against dangling proxy sockets and verify fixture creation through OpenDesign's file API plus real two-color deck output.
+- Reject symbolic links during privileged `/data` preparation and use no-follow ownership changes, preventing persisted state from redirecting root startup operations outside the add-on data tree.
