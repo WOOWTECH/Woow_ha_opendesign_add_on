@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly DATA_DIR=/data/opendesign
+readonly NGINX_TMP=/tmp/ha-opendesign-nginx
+od_pid=''
+nginx_pid=''
+stopping=0
+
+terminate_children() {
+  if (( stopping )); then
+    return
+  fi
+  stopping=1
+  trap - TERM INT
+  for pid in "$od_pid" "$nginx_pid"; do
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      kill -TERM "$pid" 2>/dev/null || true
+    fi
+  done
+  for pid in "$od_pid" "$nginx_pid"; do
+    if [[ -n "$pid" ]]; then
+      wait "$pid" 2>/dev/null || true
+    fi
+  done
+}
+
+trap terminate_children TERM INT
+
+mkdir -p \
+  "$DATA_DIR" \
+  "$DATA_DIR/home" \
+  "$DATA_DIR/export-render" \
+  "$DATA_DIR/export-pdf" \
+  "$NGINX_TMP/client" \
+  "$NGINX_TMP/proxy" \
+  "$NGINX_TMP/fastcgi" \
+  "$NGINX_TMP/uwsgi" \
+  "$NGINX_TMP/scgi"
+
+export OD_DATA_DIR="$DATA_DIR"
+export OD_BIND_HOST=127.0.0.1
+export OD_PORT=7456
+export HOME="$DATA_DIR/home"
+
+node /opt/ha-opendesign/headless-entry.mjs &
+od_pid=$!
+nginx -c /etc/nginx/nginx.conf &
+nginx_pid=$!
+
+set +e
+wait -n "$od_pid" "$nginx_pid"
+status=$?
+set -e
+
+echo "[ha-opendesign] a required process exited (status=$status); stopping its peer" >&2
+terminate_children
+
+# A clean but unexpected child exit still requires Supervisor to restart us.
+if (( status == 0 )); then
+  status=1
+fi
+exit "$status"

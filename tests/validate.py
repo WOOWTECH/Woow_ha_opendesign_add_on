@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+from pathlib import Path
+import json
+import re
+import sys
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[1]
+errors = []
+
+def check(condition, message):
+    if not condition:
+        errors.append(message)
+
+with (ROOT / "repository.yaml").open() as handle:
+    repository = yaml.safe_load(handle)
+with (ROOT / "config.yaml").open() as handle:
+    config = yaml.safe_load(handle)
+with (ROOT / "build.yaml").open() as handle:
+    build = yaml.safe_load(handle)
+with (ROOT / "runtime/package.json").open() as handle:
+    package = json.load(handle)
+with (ROOT / ".github/workflows/build.yml").open() as handle:
+    workflow = yaml.safe_load(handle)
+
+check(isinstance(workflow, dict) and "jobs" in workflow, "GitHub Actions workflow YAML is invalid")
+check(set(repository) == {"name", "url", "maintainer"}, "repository.yaml must have the repository contract keys")
+check(repository.get("url") == "https://github.com/WOOWTECH/Woow_ha_opendesign_add_on", "repository URL mismatch")
+check(config.get("arch") == ["amd64", "aarch64"], "only amd64 and aarch64 are allowed")
+check(config.get("ingress") is True, "ingress must be enabled")
+check(config.get("ingress_stream") is True, "ingress_stream must be enabled")
+check(config.get("ingress_port") == 8099, "ingress port must be 8099")
+check("ports" not in config and "ports_description" not in config and "webui" not in config, "LAN port publication is forbidden")
+check(config.get("backup") == "cold", "cold backup is required")
+check(config.get("watchdog") == "http://[HOST]:[PORT:8099]/api/health", "watchdog must use ingress health route")
+check(config.get("options") == {} and config.get("schema") == {}, "add-on options/schema must stay empty (no provider secrets)")
+check("map" not in config, "host/add-on path maps are forbidden")
+check(config.get("image") == "ghcr.io/woowtech/woow-ha-opendesign-{arch}", "architecture image pattern mismatch")
+check(build.get("build_from") == {"amd64": "ghcr.io/nexu-io/od:0.21.1", "aarch64": "ghcr.io/nexu-io/od:0.21.1"}, "both architectures must pin OpenDesign 0.21.1")
+check(package.get("dependencies") == {"playwright-core": "1.55.0"}, "renderer dependency must remain exactly pinned")
+
+dockerfile = (ROOT / "Dockerfile").read_text()
+launcher = (ROOT / "rootfs/usr/local/bin/ha-opendesign").read_text()
+entry = (ROOT / "rootfs/opt/ha-opendesign/headless-entry.mjs").read_text()
+nginx = (ROOT / "rootfs/etc/nginx/nginx.conf").read_text()
+workflow_text = (ROOT / ".github/workflows/build.yml").read_text()
+runtime_sources = "\n".join([
+    dockerfile,
+    launcher,
+    entry,
+    nginx,
+    (ROOT / "runtime/package.json").read_text(),
+])
+
+check(re.search(r"^ARG BUILD_FROM=ghcr\.io/nexu-io/od:0\.21\.1$", dockerfile, re.M), "Dockerfile base must be pinned")
+check("EXPOSE" not in dockerfile, "Dockerfile must not expose a port")
+check("OD_DATA_DIR=/data/opendesign" in dockerfile, "OD_DATA_DIR persistence is missing")
+check("OD_BIND_HOST=127.0.0.1" in dockerfile, "Dockerfile must set loopback bind")
+check("USER open-design" in dockerfile, "final runtime user must be open-design (UID 1001 upstream)")
+for expected in ["chromium", "font-noto-cjk", "font-noto-emoji", "fontconfig", "nginx"]:
+    check(expected in dockerfile, f"expected image package missing: {expected}")
+check("npm ci --omit=dev" in dockerfile, "locked production npm install required")
+check("startServer" in entry and "desktopSlideRenderer: renderSlides" in entry and "desktopPdfExporter: exportPdf" in entry, "export renderer injection missing")
+check("host = '127.0.0.1'" in entry, "OpenDesign entry must bind loopback")
+check("wait -n" in launcher and "terminate_children" in launcher, "two-process watchdog launcher missing")
+check("proxy_pass http://127.0.0.1:7456" in nginx, "nginx may only forward to loopback OpenDesign")
+check("/tmp/ha-opendesign-nginx" in nginx, "unprivileged nginx temp paths missing")
+check("needs: validate" in workflow_text, "architecture builds must depend on validation")
+check("linux/amd64" in workflow_text and "linux/arm64" in workflow_text, "CI architecture matrix is incomplete")
+check("ghcr.io/woowtech/woow-ha-opendesign-${{ matrix.arch }}" in workflow_text, "CI GHCR architecture image name mismatch")
+check("latest" not in workflow_text.lower(), "CI must not publish a latest tag")
+
+for pattern, label in [
+    (r"(?:^|[\s=:/])docker\.sock(?:$|[\s])", "container socket"),
+    (r"(?:^|\s)--privileged(?:\s|$)", "privileged mode"),
+    (r"(?:^|\s)--network[= ]host(?:\s|$)", "host networking"),
+    (r"(?:^|\s)(?:claude|codex|opencode)(?:@|\s|$)", "local AI CLI package"),
+    (r"@(?:mariozechner|earendil-works)/pi-coding-agent", "Pi AI CLI package"),
+    (r"/(?:mnt|media|share|config)(?:/|\s|$)", "host path coupling"),
+]:
+    check(not re.search(pattern, runtime_sources, re.I | re.M), f"forbidden runtime coupling detected: {label}")
+
+for required in ["README.md", "README_zh-TW.md", "DOCS.md", "CHANGELOG.md", "LICENSE"]:
+    check((ROOT / required).is_file(), f"missing required file: {required}")
+
+if errors:
+    for error in errors:
+        print(f"ERROR: {error}", file=sys.stderr)
+    sys.exit(1)
+print("metadata/runtime validation: OK")

@@ -1,0 +1,61 @@
+ARG BUILD_FROM=ghcr.io/nexu-io/od:0.21.1
+FROM ${BUILD_FROM}
+
+USER root
+
+ENV NODE_ENV=production \
+    OD_BIND_HOST=127.0.0.1 \
+    OD_PORT=7456 \
+    OD_DATA_DIR=/data/opendesign \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+    PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser \
+    HOME=/data/opendesign/home
+
+# The browser comes from Alpine rather than being downloaded on first boot.
+# playwright-core is locked independently in /opt/ha-opendesign/package-lock.json.
+RUN apk add --no-cache \
+      chromium \
+      font-noto-cjk \
+      font-noto-emoji \
+      fontconfig \
+      nginx \
+    && rm -rf /etc/nginx/http.d/* /var/cache/apk/*
+
+COPY runtime/package.json runtime/package-lock.json /opt/ha-opendesign/
+RUN npm ci --omit=dev --prefix /opt/ha-opendesign \
+    && npm cache clean --force \
+    && test "$(id -u open-design)" = "1001" \
+    && command -v chromium-browser \
+    && command -v nginx
+
+COPY rootfs/ /
+RUN chmod 0755 \
+      /usr/local/bin/ha-opendesign \
+      /opt/ha-opendesign/headless-entry.mjs \
+      /opt/ha-opendesign/headless-renderer.mjs \
+    && chown -R open-design:open-design /opt/ha-opendesign
+
+ARG BUILD_ARCH=amd64
+ARG BUILD_VERSION=0.1.0
+ARG BUILD_DATE
+ARG BUILD_DESCRIPTION="OpenDesign for Home Assistant"
+ARG BUILD_NAME="Woow HA OpenDesign"
+ARG BUILD_REF
+ARG BUILD_REPOSITORY=WOOWTECH/Woow_ha_opendesign_add_on
+
+LABEL io.hass.name="${BUILD_NAME}" \
+      io.hass.description="${BUILD_DESCRIPTION}" \
+      io.hass.arch="${BUILD_ARCH}" \
+      io.hass.type="addon" \
+      io.hass.version="${BUILD_VERSION}" \
+      org.opencontainers.image.title="${BUILD_NAME}" \
+      org.opencontainers.image.description="${BUILD_DESCRIPTION}" \
+      org.opencontainers.image.vendor="WOOWTECH" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.source="https://github.com/${BUILD_REPOSITORY}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.revision="${BUILD_REF}" \
+      org.opencontainers.image.version="${BUILD_VERSION}"
+
+USER open-design
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/ha-opendesign"]
