@@ -164,6 +164,20 @@ grep -Fq 'deck.html' "$tmp/deck-file-response.json"
 docker cp tests/container-ingress-browser-e2e.mjs "$container:/opt/ha-opendesign/container-ingress-browser-e2e.mjs"
 docker exec "$container" node /opt/ha-opendesign/container-ingress-browser-e2e.mjs
 
+# Alpine Chromium's crashpad helper can outlive browser.close() briefly on
+# constrained GitHub runners. Do not overlap it with the real renderer launch.
+for _ in $(seq 1 30); do
+  if ! docker exec "$container" sh -c 'ps -eo comm | grep -Eq "chromium|chrome_crashpad"'; then
+    break
+  fi
+  sleep 1
+done
+if docker exec "$container" sh -c 'ps -eo comm | grep -Eq "chromium|chrome_crashpad"'; then
+  echo 'browser smoke left Chromium processes running' >&2
+  exit 1
+fi
+sleep 2
+
 post_export() {
   local endpoint=$1 body=$2 output=$3
   curl --fail-with-body -sS -o "$output" \
