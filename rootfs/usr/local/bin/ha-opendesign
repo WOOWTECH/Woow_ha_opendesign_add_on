@@ -48,25 +48,35 @@ terminate_children() {
 
 trap terminate_children TERM INT
 
-mkdir -p \
-  "$DATA_DIR" \
-  "$DATA_DIR/home" \
-  "$DATA_DIR/export-render" \
-  "$DATA_DIR/export-pdf" \
-  "$NGINX_TMP/client" \
-  "$NGINX_TMP/proxy" \
-  "$NGINX_TMP/fastcgi" \
-  "$NGINX_TMP/uwsgi" \
+if [[ $(id -u) -ne 0 ]]; then
+  echo "[ha-opendesign] launcher must start as root to prepare the HA /data mount" >&2
+  exit 78
+fi
+
+owned_dirs=(
+  "$DATA_DIR"
+  "$DATA_DIR/home"
+  "$DATA_DIR/export-render"
+  "$DATA_DIR/export-pdf"
+  "$NGINX_TMP"
+  "$NGINX_TMP/client"
+  "$NGINX_TMP/proxy"
+  "$NGINX_TMP/fastcgi"
+  "$NGINX_TMP/uwsgi"
   "$NGINX_TMP/scgi"
+)
+mkdir -p "${owned_dirs[@]}"
+chown open-design:open-design "${owned_dirs[@]}"
+chmod 0750 "$DATA_DIR" "$DATA_DIR/home" "$DATA_DIR/export-render" "$DATA_DIR/export-pdf"
 
 export OD_DATA_DIR="$DATA_DIR"
 export OD_BIND_HOST=127.0.0.1
 export OD_PORT=7456
 export HOME="$DATA_DIR/home"
 
-node /opt/ha-opendesign/headless-entry.mjs &
+su-exec open-design:open-design /usr/local/bin/node /opt/ha-opendesign/headless-entry.mjs &
 od_pid=$!
-nginx -c /etc/nginx/nginx.conf &
+su-exec open-design:open-design /usr/sbin/nginx -c /etc/nginx/nginx.conf &
 nginx_pid=$!
 
 set +e

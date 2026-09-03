@@ -20,6 +20,7 @@ RUN apk add --no-cache \
       font-noto-emoji \
       fontconfig \
       nginx \
+      su-exec \
     && rm -rf /etc/nginx/http.d/* /var/cache/apk/*
 
 COPY runtime/package.json runtime/package-lock.json /opt/ha-opendesign/
@@ -33,7 +34,8 @@ RUN /usr/local/bin/npm ci --omit=dev --prefix /opt/ha-opendesign \
     && test -x /usr/local/bin/npm \
     && command -v bash \
     && command -v chromium-browser \
-    && command -v nginx
+    && command -v nginx \
+    && command -v su-exec
 
 COPY rootfs/ /
 RUN mkdir -p /data/opendesign \
@@ -66,5 +68,8 @@ LABEL io.hass.name="${BUILD_NAME}" \
       org.opencontainers.image.revision="${BUILD_REF}" \
       org.opencontainers.image.version="${BUILD_VERSION}"
 
-USER open-design
+# HA mounts /data at runtime as root. PID 1 starts as root only long enough to
+# create/chown owned directories; the launcher drops both application processes
+# to the upstream open-design UID/GID 1001 with su-exec.
+USER root
 ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/ha-opendesign"]

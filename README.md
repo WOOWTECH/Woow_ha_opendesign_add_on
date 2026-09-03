@@ -31,7 +31,7 @@ browser → HA authenticated ingress → nginx :8099 → OpenDesign 127.0.0.1:74
 
 nginx validates `X-Ingress-Path`, rewrites initial root-relative URLs, and injects early browser shims covering fetch, XHR, EventSource, WebSocket, history, workers, dynamically inserted asset URLs, and the two web-mode export gaps. In HA Ingress the PDF action is redirected from the desktop-JSON endpoint to the binary screenshot-PDF endpoint, while PNG/JPEG saves call the daemon's headless image endpoint. Buffering and upstream compression are disabled to preserve streams and allow response rewriting.
 
-A PID-1 launcher starts nginx and OpenDesign, forwards termination, and stops the peer if either process exits. Shutdown sends TERM, waits at most five seconds, then sends KILL and reaps. Both services run as upstream `open-design` UID/GID 1001. nginx keeps its PID and temporary files under `/tmp`.
+A root PID-1 launcher prepares Home Assistant's root-owned `/data` mount, then uses `su-exec` to run nginx and OpenDesign as upstream `open-design` UID/GID 1001. It forwards termination and stops the peer if either process exits; shutdown sends TERM, waits at most five seconds, then sends KILL and reaps. nginx keeps its PID and temporary files under `/tmp`.
 
 ## Development and validation
 
@@ -49,4 +49,4 @@ Renderer HTML is model-generated, so Chromium applies a request policy before ev
 
 ## Upstream and license
 
-The runtime derives from `ghcr.io/nexu-io/od:0.21.1`, pinned by digest in all build paths. OpenDesign has its own upstream licensing and notices. The add-on packaging and integration code in this repository is MIT licensed; see [LICENSE](LICENSE).
+The runtime derives from `ghcr.io/nexu-io/od:0.21.1`. The Dockerfile and release/CI builds pin its multi-architecture digest. Home Assistant's local add-on builder does not accept digest syntax in `build.yaml`, so that development-only path is pinned to the `0.21.1` tag instead. OpenDesign has its own upstream licensing and notices. The add-on packaging and integration code in this repository is MIT licensed; see [LICENSE](LICENSE).

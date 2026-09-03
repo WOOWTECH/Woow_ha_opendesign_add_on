@@ -38,7 +38,8 @@ check(config.get("options") == {} and config.get("schema") == {}, "add-on option
 check("map" not in config, "host/add-on path maps are forbidden")
 check(config.get("image") == "ghcr.io/woowtech/woow-ha-opendesign-{arch}", "architecture image pattern mismatch")
 upstream_image = "ghcr.io/nexu-io/od:0.21.1@sha256:441daca881e699657bacf28e0c27b16cd6be551dfff4bd63368dd74bec581f39"
-check(build.get("build_from") == {"amd64": upstream_image, "aarch64": upstream_image}, "both architectures must pin OpenDesign 0.21.1 by digest")
+local_build_image = "ghcr.io/nexu-io/od:0.21.1"
+check(build.get("build_from") == {"amd64": local_build_image, "aarch64": local_build_image}, "Supervisor local builds must use the supported OpenDesign 0.21.1 tag syntax")
 check(package.get("dependencies") == {"playwright-core": "1.55.0"}, "renderer dependency must remain exactly pinned")
 
 dockerfile = (ROOT / "Dockerfile").read_text()
@@ -62,8 +63,9 @@ check(re.search(rf"^ARG BUILD_FROM={re.escape(upstream_image)}$", dockerfile, re
 check("EXPOSE" not in dockerfile, "Dockerfile must not expose a port")
 check("OD_DATA_DIR=/data/opendesign" in dockerfile, "OD_DATA_DIR persistence is missing")
 check("OD_BIND_HOST=127.0.0.1" in dockerfile, "Dockerfile must set loopback bind")
-check("USER open-design" in dockerfile, "final runtime user must be open-design (UID 1001 upstream)")
-for expected in ["bash", "chromium", "font-noto-cjk", "font-noto-emoji", "fontconfig", "nginx"]:
+check(re.search(r"^USER root$", dockerfile, re.M), "PID 1 must start as root to prepare HA's root-owned /data mount")
+check("su-exec open-design:open-design" in launcher, "launcher must drop OpenDesign and nginx to UID/GID 1001")
+for expected in ["bash", "chromium", "font-noto-cjk", "font-noto-emoji", "fontconfig", "nginx", "su-exec"]:
     check(expected in dockerfile, f"expected image package missing: {expected}")
 check("/usr/local/bin/npm ci --omit=dev" in dockerfile, "locked production npm install must use the upstream absolute npm path for HA BuildKit")
 check("test -x /usr/local/bin/npm" in dockerfile, "image build must verify the absolute npm executable")

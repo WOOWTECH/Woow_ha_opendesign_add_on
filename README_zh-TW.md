@@ -31,7 +31,7 @@
 
 nginx 先驗證 `X-Ingress-Path`，改寫初始回應中的根路徑 URL，並在應用程式碼之前注入 shim，以處理 fetch、XHR、EventSource、WebSocket、history、worker、動態資源 URL 與 web 模式的匯出缺口。HA Ingress 的 PDF 操作會改走可下載的截圖 PDF 二進位端點，PNG/JPEG 儲存則直接呼叫 daemon 的無頭 image 端點。SSE／WebSocket 不緩衝，且對上游停用壓縮以便安全改寫。
 
-PID 1 啟動器同時管理 nginx 與 OpenDesign；任一程序退出時會停止另一個並讓 Supervisor 重新啟動。關閉時先送 TERM、最多等待五秒，再送 KILL 並回收程序。兩者都以 OpenDesign 的 UID/GID 1001 執行，nginx PID 與暫存目錄位於 `/tmp`。
+root PID 1 啟動器先準備 Home Assistant 以 root 掛載的 `/data`，再透過 `su-exec` 讓 nginx 與 OpenDesign 以 UID/GID 1001 執行；任一程序退出時會停止另一個並讓 Supervisor 重新啟動。關閉時先送 TERM、最多等待五秒，再送 KILL 並回收程序。nginx PID 與暫存目錄位於 `/tmp`。
 
 ## 驗證
 
@@ -47,4 +47,4 @@ PID 1 啟動器同時管理 nginx 與 OpenDesign；任一程序退出時會停�
 
 ## 授權
 
-執行映像衍生自 `ghcr.io/nexu-io/od:0.21.1`，且所有建置路徑皆固定其 digest；OpenDesign 本身適用其上游授權與聲明。本儲存庫的附加元件封裝及整合程式採 MIT 授權，詳見 [LICENSE](LICENSE)。
+執行映像衍生自 `ghcr.io/nexu-io/od:0.21.1`。Dockerfile 與 release／CI 建置固定其多架構 digest；Home Assistant 本機附加元件建置器不接受 `build.yaml` 的 digest 語法，因此僅該開發路徑固定使用 `0.21.1` tag。OpenDesign 本身適用其上游授權與聲明。本儲存庫的附加元件封裝及整合程式採 MIT 授權，詳見 [LICENSE](LICENSE)。

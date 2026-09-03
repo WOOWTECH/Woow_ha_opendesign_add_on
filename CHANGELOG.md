@@ -20,4 +20,6 @@
 - Split non-release builds from release publishing so PR/main jobs retain only `contents: read`; add a release-only, fail-closed GHCR preflight that prevents overwriting either architecture version tag. Partial releases now require a version bump.
 - Hold the remote-resource semaphore across DNS policy evaluation and pinned fetch completion, with an instrumented resolver-concurrency regression test.
 - Assert in the Chromium ingress smoke that custom `Request` headers survive the Supervisor-style proxy during PDF export.
-- Use and verify the upstream image's absolute `/usr/local/bin/npm` path so Home Assistant Supervisor BuildKit builds do not fail under a reduced `PATH`.
+- Use and verify the upstream image's absolute `/usr/local/bin/npm` path so reduced build environments cannot lose npm from `PATH`.
+- Keep Supervisor `build.yaml` on the supported `0.21.1` tag syntax (digest syntax is silently replaced by the default HA base), while retaining digest pins in Dockerfile and CI/release builds.
+- Start a minimal root PID 1 to prepare HA's root-owned `/data` mount, then drop nginx and OpenDesign to UID/GID 1001 with `su-exec`; verify ownership and child UIDs in container smoke tests.

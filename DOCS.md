@@ -27,9 +27,11 @@ The add-on does not inject the desktop vector-PDF exporter: upstream's browser c
 
 Rendering is serialized and bounded by an absolute two-minute deadline, 64 slides, aggregate pixel/output-byte limits, canonical output-path confinement, capped remote-resource concurrency/bytes, and a network policy. Each remote-resource permit is held from DNS policy evaluation through pinned fetch completion, preventing model-authored HTML from starting unbounded DNS lookups. CJK and color emoji fonts are installed in the image. Oversized decks and pages fail with a bounded-size error instead of exhausting add-on memory. Renderer documents can load inline `data:`/`blob:` resources, project assets from the exact OpenDesign origin, and public HTTP(S) resources after DNS/IP validation and pinned connection. WebSockets are disabled; Supervisor, link-local, private, CGNAT, and other loopback destinations are blocked to keep model-authored HTML from reaching the HA network.
 
-## Release policy
+## Runtime ownership and release policy
 
-CI validates and smokes every build before architecture work. Pull requests and `main` build without pushing under `contents: read`; only an exact `v<config-version>` tag starts a publisher with `packages: write`. Its preflight fails closed unless both architecture version tags are absent from GHCR. Version tags are immutable: a partial architecture release cannot be retried over the same version and requires a version bump plus a new matching Git tag.
+The container starts a minimal root PID 1 because Home Assistant mounts `/data` as root at runtime. It creates and assigns only the add-on-owned directories, then launches both OpenDesign and nginx through `su-exec` as UID/GID 1001.
+
+CI validates and smokes every build before architecture work. Pull requests and `main` build without pushing under `contents: read`; only an exact `v<config-version>` tag starts a publisher with `packages: write`. Its preflight fails closed unless both architecture version tags are absent from GHCR. Version tags are immutable: a partial architecture release cannot be retried over the same version and requires a version bump plus a new matching Git tag. Dockerfile and CI/release inputs pin the upstream digest; `build.yaml` uses the `0.21.1` tag because Supervisor's local builder rejects digest syntax there and otherwise silently substitutes its default base image.
 
 ## Local runtimes
 

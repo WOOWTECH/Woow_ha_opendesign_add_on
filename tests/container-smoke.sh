@@ -70,14 +70,23 @@ assert json.load(open(sys.argv[1], encoding='utf-8')).get('ok') is True
 PY
 
 docker exec "$container" sh -ceu '
-  test "$(id -u)" = 1001
-  test "$(id -g)" = 1001
+  # PID 1 is root only to prepare the Supervisor root-owned /data mount.
+  test "$(id -u)" = 0
+  test "$(stat -c %u:%g /data/opendesign)" = 1001:1001
+  for process in node nginx; do
+    pids=$(pidof "$process")
+    test -n "$pids"
+    for pid in $pids; do
+      set -- $(grep "^Uid:" "/proc/$pid/status")
+      test "$2 $3 $4" = "1001 1001 1001"
+    done
+  done
   test -d /data/opendesign
-  test -w /data/opendesign
   test -r /app/apps/daemon/dist/cli.js
   test -d /app/apps/web/out
   test -x /usr/bin/chromium-browser
   command -v bash >/dev/null
+  command -v su-exec >/dev/null
   test -r /opt/ha-opendesign/headless-entry.mjs
   test -r /opt/ha-opendesign/headless-renderer.mjs
   test -r /opt/ha-opendesign/ha-export-bridge.js
@@ -89,6 +98,9 @@ docker exec "$container" sh -ceu '
       exit 1
     fi
   done
+'
+docker exec -u 1001:1001 "$container" sh -ceu '
+  test -w /data/opendesign
   printf persisted > /data/opendesign/container-smoke-sentinel
 '
 
