@@ -76,7 +76,9 @@ export HOME="$DATA_DIR/home"
 
 su-exec open-design:open-design /usr/local/bin/node /opt/ha-opendesign/headless-entry.mjs &
 od_pid=$!
-su-exec open-design:open-design /usr/sbin/nginx -c /etc/nginx/nginx.conf &
+# `-e stderr` uses the inherited descriptor directly; reopening /dev/stderr is
+# denied when HA's root PID 1 drops to UID 1001 under its container procfs.
+su-exec open-design:open-design /usr/sbin/nginx -e stderr -c /etc/nginx/nginx.conf &
 nginx_pid=$!
 
 set +e

@@ -65,6 +65,7 @@ check("OD_DATA_DIR=/data/opendesign" in dockerfile, "OD_DATA_DIR persistence is 
 check("OD_BIND_HOST=127.0.0.1" in dockerfile, "Dockerfile must set loopback bind")
 check(re.search(r"^USER root$", dockerfile, re.M), "PID 1 must start as root to prepare HA's root-owned /data mount")
 check("su-exec open-design:open-design" in launcher, "launcher must drop OpenDesign and nginx to UID/GID 1001")
+check("/usr/sbin/nginx -e stderr" in launcher, "unprivileged nginx must use its inherited stderr descriptor under HA procfs")
 for expected in ["bash", "chromium", "font-noto-cjk", "font-noto-emoji", "fontconfig", "nginx", "su-exec"]:
     check(expected in dockerfile, f"expected image package missing: {expected}")
 check("/usr/local/bin/npm ci --omit=dev" in dockerfile, "locked production npm install must use the upstream absolute npm path for HA BuildKit")
