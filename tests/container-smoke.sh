@@ -136,12 +136,22 @@ import sys
 body = json.load(open(sys.argv[1], encoding='utf-8'))
 assert 'ha-smoke' in json.dumps(body), body
 PY
-docker exec -i "$container" sh -c 'cat > /data/opendesign/projects/ha-smoke/deck.html' <<'HTML'
-<!doctype html><html><head><style>
+python3 - "$tmp/deck-file.json" <<'PY'
+import json
+import sys
+html = '''<!doctype html><html><head><style>
 html,body{margin:0;background:#fff}.slide{width:640px;height:360px;display:block;color:#fff;font:32px sans-serif}
 .slide:first-of-type{background:#165dba}.slide:last-of-type{background:#a33}
-</style></head><body><section class="slide">Slide one</section><section class="slide">Slide two</section></body></html>
-HTML
+</style></head><body><section class="slide">Slide one</section><section class="slide">Slide two</section></body></html>'''
+with open(sys.argv[1], 'w', encoding='utf-8') as handle:
+    json.dump({'name': 'deck.html', 'content': html}, handle)
+PY
+curl --fail-with-body -sS -o "$tmp/deck-file-response.json" \
+  -H "X-Ingress-Path: $ingress_prefix" \
+  -H 'content-type: application/json' \
+  --data-binary "@$tmp/deck-file.json" \
+  "http://127.0.0.1:${port}/api/projects/ha-smoke/files"
+grep -Fq 'deck.html' "$tmp/deck-file-response.json"
 
 # Run the actual injected scripts in Chromium through a Supervisor-style proxy
 # that receives the public prefix, strips it, and supplies X-Ingress-Path to
