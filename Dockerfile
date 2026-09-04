@@ -47,6 +47,7 @@ RUN mkdir -p /data/opendesign \
       /usr/local/bin/ha-opendesign \
       /usr/local/bin/pi \
       /opt/ha-opendesign/ha-pi-wrapper.mjs \
+      /opt/ha-opendesign/ha-byok-store.mjs \
       /opt/ha-opendesign/headless-entry.mjs \
       /opt/ha-opendesign/headless-renderer.mjs \
     && chown -R open-design:open-design /opt/ha-opendesign

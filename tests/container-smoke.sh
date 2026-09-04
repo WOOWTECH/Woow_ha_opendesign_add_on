@@ -53,6 +53,56 @@ import sys
 assert json.load(open(sys.argv[1], encoding='utf-8')).get('ok') is True
 PY
 
+# The sidecar has no public listener: a loopback call without nginx's private
+# marker is rejected, while nginx replaces a forged client marker and forwards
+# the full profile state. Bodies are confined to the temporary test directory.
+docker exec "$container" node -e '
+fetch("http://127.0.0.1:7457/api/ha-opendesign/byok/profiles").then((response) => {
+  if (response.status !== 403) process.exit(1);
+}).catch(() => process.exit(1));
+'
+python3 - "$tmp/byok-request.json" <<'PY'
+import json
+import sys
+json.dump({
+    'version': 1,
+    'revision': 0,
+    'activeProfileId': 'smoke-compatible',
+    'profiles': {
+        'smoke-compatible': {
+            'id': 'smoke-compatible',
+            'label': 'Smoke compatible',
+            'protocol': 'openai-compatible',
+            'baseUrl': 'https://provider.example/v1',
+            'authStyle': 'bearer',
+            'apiFlavor': 'openai-responses',
+            'apiKey': 'container-test-credential',
+            'model': 'smoke/model',
+            'updatedAt': '2026-09-04T00:00:00.000Z',
+        },
+    },
+}, open(sys.argv[1], 'w', encoding='utf-8'))
+PY
+curl --fail-with-body -sS -o "$tmp/byok-response.json" \
+  -X PUT \
+  -H 'content-type: application/json' \
+  -H 'X-HA-OpenDesign-Byok-Marker: forged-client-value' \
+  --data-binary "@$tmp/byok-request.json" \
+  "http://127.0.0.1:${port}/api/ha-opendesign/byok/profiles"
+python3 - "$tmp/byok-response.json" <<'PY'
+import json
+import sys
+body = json.load(open(sys.argv[1], encoding='utf-8'))
+assert body['revision'] == 1
+assert body['activeProfileId'] == 'smoke-compatible'
+assert len(body['profiles']['smoke-compatible']['apiKey']) > 0
+PY
+docker exec "$container" sh -ceu '
+  test "$(stat -c %u:%g /data/opendesign/credentials)" = 1001:1001
+  test "$(stat -c %a /data/opendesign/credentials)" = 700
+  test "$(stat -c %a /data/opendesign/credentials/byok-profiles.json)" = 600
+'
+
 # HA Supervisor removes the public ingress prefix before proxying and supplies
 # it in X-Ingress-Path. Nginx therefore receives '/' and must inject/rewrite the
 # prefix into the returned application shell.
@@ -128,6 +178,16 @@ import sys
 assert json.load(open(sys.argv[1], encoding='utf-8')).get('ok') is True
 PY
 docker exec "$container" grep -qx persisted /data/opendesign/container-smoke-sentinel
+curl --fail-with-body -sS -o "$tmp/byok-after-restart.json" \
+  "http://127.0.0.1:${port}/api/ha-opendesign/byok/profiles"
+python3 - "$tmp/byok-after-restart.json" <<'PY'
+import json
+import sys
+body = json.load(open(sys.argv[1], encoding='utf-8'))
+assert body['revision'] == 1
+assert body['activeProfileId'] == 'smoke-compatible'
+assert len(body['profiles']['smoke-compatible']['apiKey']) > 0
+PY
 
 # Direct renderer acceptance uses the Chromium and playwright-core installed in
 # the image. It requires no provider key or generation call.
