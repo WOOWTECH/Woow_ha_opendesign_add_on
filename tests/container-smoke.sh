@@ -58,6 +58,7 @@ PY
 # prefix into the returned application shell.
 ingress_prefix=/api/hassio_ingress/abcdefghijklmnop
 docker cp tests/export-http-contract-e2e.mjs "$container:/tmp/export-http-contract-e2e.mjs"
+docker cp tests/export-archive-inspection.mjs "$container:/tmp/export-archive-inspection.mjs"
 docker cp tests/fixtures/export-deck.html "$container:/tmp/export-deck.html"
 docker exec \
   -e OD_EXPORT_BASE_URL=http://127.0.0.1:8099 \

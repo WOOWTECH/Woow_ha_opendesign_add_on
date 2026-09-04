@@ -20,7 +20,7 @@ test('export deck fixture is a self-contained two-slide export specification', a
   assert.match(html, /\.slide:first-of-type\s*\{\s*background:\s*#165DBA;\s*\}/);
   assert.match(html, /\.slide:last-of-type\s*\{\s*background:\s*#AA3333;\s*\}/);
 
-  for (const forbidden of [/<script\b/i, /<link\b/i, /url\(/i, /https?:\/\//i, /@font-face/i, /animation\s*:/i, /\bDate\b/, /Math\.random/]) {
+  for (const forbidden of [/<script\b/i, /<link\b/i, /url\(/i, /https?:\/\//i, /@font-face/i, /@media\b/i, /animation\s*:/i, /\bDate\b/, /Math\.random/]) {
     assert.doesNotMatch(html, forbidden, `fixture must not contain ${forbidden}`);
   }
 });

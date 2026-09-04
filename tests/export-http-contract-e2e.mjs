@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { inspectZipMembers } from './export-archive-inspection.mjs';
 
 const baseUrl = process.env.OD_EXPORT_BASE_URL;
 const ingressPath = process.env.OD_EXPORT_INGRESS_PATH;
@@ -40,32 +41,6 @@ async function assertStatus(response, expectedStatus) {
 function assertAttachment(response, expectedType) {
   assert.match(response.headers.get('content-type') || '', expectedType);
   assert.match(response.headers.get('content-disposition') || '', /attachment/i);
-}
-
-function zipMemberNames(bytes) {
-  const eocdSignature = 0x06054b50;
-  const centralSignature = 0x02014b50;
-  const minimumEocdOffset = Math.max(0, bytes.length - 65_557);
-  let eocdOffset = -1;
-  for (let offset = bytes.length - 22; offset >= minimumEocdOffset; offset -= 1) {
-    if (bytes.readUInt32LE(offset) === eocdSignature) {
-      eocdOffset = offset;
-      break;
-    }
-  }
-  assert.notEqual(eocdOffset, -1, 'ZIP end-of-central-directory record is required');
-  const entryCount = bytes.readUInt16LE(eocdOffset + 10);
-  let offset = bytes.readUInt32LE(eocdOffset + 16);
-  const names = [];
-  for (let index = 0; index < entryCount; index += 1) {
-    assert.equal(bytes.readUInt32LE(offset), centralSignature, 'ZIP central-directory entry is required');
-    const nameLength = bytes.readUInt16LE(offset + 28);
-    const extraLength = bytes.readUInt16LE(offset + 30);
-    const commentLength = bytes.readUInt16LE(offset + 32);
-    names.push(bytes.subarray(offset + 46, offset + 46 + nameLength).toString('utf8'));
-    offset += 46 + nameLength + extraLength + commentLength;
-  }
-  return names;
 }
 
 const fixture = await readFile(fixturePath, 'utf8');
@@ -114,11 +89,11 @@ await assertStatus(archive, 200);
 assertAttachment(archive, /^application\/zip\b/i);
 const archiveBytes = Buffer.from(await archive.arrayBuffer());
 assert.deepEqual(archiveBytes.subarray(0, 2), Buffer.from('PK'));
-const members = zipMemberNames(archiveBytes);
-assert.ok(members.includes('export-deck.html'), JSON.stringify(members));
-for (const member of members) {
-  assert.ok(!member.startsWith('/'), member);
-  assert.ok(!member.split('/').includes('..'), member);
+const members = inspectZipMembers(archiveBytes);
+assert.ok(members.some(({ name }) => name === 'export-deck.html'), JSON.stringify(members));
+for (const { name } of members) {
+  assert.ok(!name.startsWith('/'), name);
+  assert.ok(!name.split('/').includes('..'), name);
 }
 
 console.log('export HTTP contract: HTML attachment/error and normal ZIP archive passed');
