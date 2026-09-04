@@ -89,8 +89,15 @@ const html = await requestJson(`/api/projects/${encodeURIComponent(projectId)}/e
 });
 await assertStatus(html, 200);
 assertAttachment(html, /^text\/html\b/i);
+assert.match(html.headers.get('content-type') || '', /(?:^|;)\s*charset\s*=\s*utf-8(?:\s*;|$)/i);
 const htmlBody = await html.text();
 assert.ok(htmlBody.length > 0, 'HTML export must not be empty');
+assert.match(htmlBody, /<title\b[^>]*>\s*OpenDesign 匯出驗證 🎨\s*<\/title>/i);
+assert.equal(
+  (htmlBody.match(/<section\b[^>]*\bclass=(?:"[^"]*\bslide\b[^"]*"|'[^']*\bslide\b[^']*')/gi) || []).length,
+  2,
+  'HTML export must contain exactly two section.slide elements',
+);
 assert.match(htmlBody, /第一張 \/ Slide one/);
 assert.match(htmlBody, /第二張 \/ Slide two/);
 
