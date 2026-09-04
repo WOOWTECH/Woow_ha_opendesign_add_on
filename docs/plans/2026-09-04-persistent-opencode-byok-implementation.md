@@ -1,7 +1,8 @@
 # Persistent OpenCode BYOK profiles — implementation plan
 
-**Prerequisite:** approved design in `2026-09-04-persistent-opencode-byok-design.md`.  
-**Execution model:** one TDD vertical slice at a time; do not combine storage, UI, CLI, and docs changes into one unreviewable change.
+**Status:** superseded — OpenCode is fully removed in favour of Pi Local CLI profiles; see `2026-09-04-persistent-pi-byok-implementation.md`.
+**Former prerequisite:** `2026-09-04-persistent-opencode-byok-design.md`.
+**Execution model:** superseded; retained only as a decision record.
 
 ## Task 0 — architecture feasibility spike (no product commit)
 

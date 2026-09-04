@@ -1,6 +1,6 @@
 # Persistent OpenCode BYOK profiles — design
 
-**Status:** approved design; implementation has not started  
+**Status:** superseded — OpenCode is fully removed in favour of Pi Local CLI profiles; see `2026-09-04-persistent-pi-byok-design.md`.
 **Date:** 2026-09-04  
 **Upstream:** OpenDesign `0.21.1` (pinned)  
 **Add-on scope:** HA Ingress only; amd64 and aarch64
