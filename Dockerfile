@@ -45,6 +45,8 @@ RUN mkdir -p /data/opendesign \
     && chown -R open-design:open-design /data \
     && chmod 0755 \
       /usr/local/bin/ha-opendesign \
+      /usr/local/bin/pi \
+      /opt/ha-opendesign/ha-pi-wrapper.mjs \
       /opt/ha-opendesign/headless-entry.mjs \
       /opt/ha-opendesign/headless-renderer.mjs \
     && chown -R open-design:open-design /opt/ha-opendesign

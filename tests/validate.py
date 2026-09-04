@@ -60,6 +60,8 @@ launcher = (ROOT / "rootfs/usr/local/bin/ha-opendesign").read_text()
 entry = (ROOT / "rootfs/opt/ha-opendesign/headless-entry.mjs").read_text()
 renderer = (ROOT / "rootfs/opt/ha-opendesign/headless-renderer.mjs").read_text()
 export_bridge = (ROOT / "rootfs/opt/ha-opendesign/ha-export-bridge.js").read_text()
+pi_wrapper = (ROOT / "rootfs/opt/ha-opendesign/ha-pi-wrapper.mjs").read_text()
+pi_command = (ROOT / "rootfs/usr/local/bin/pi").read_text()
 nginx = (ROOT / "rootfs/etc/nginx/nginx.conf").read_text()
 workflow_text = (ROOT / ".github/workflows/build.yml").read_text()
 runtime_sources = "\n".join([
@@ -68,6 +70,8 @@ runtime_sources = "\n".join([
     entry,
     renderer,
     export_bridge,
+    pi_wrapper,
+    pi_command,
     nginx,
     (ROOT / "runtime/package.json").read_text(),
     (ROOT / "runtime/pi/package.json").read_text(),
@@ -89,6 +93,10 @@ check("test -x /usr/local/bin/npm" in dockerfile, "image build must verify the a
 check("COPY runtime/pi/package.json runtime/pi/package-lock.json /opt/ha-opendesign/pi/" in dockerfile, "Pi lockfiles must be copied independently")
 check("/usr/local/bin/npm ci --omit=dev --prefix /opt/ha-opendesign/pi" in dockerfile, "Pi install must use the locked production package prefix")
 check('test "$(/opt/ha-opendesign/pi/node_modules/.bin/pi --version)" = "0.84.4"' in dockerfile, "image build must assert the exact Pi version")
+check("/usr/local/bin/pi" in dockerfile and "ha-pi-wrapper.mjs" in dockerfile, "Pi wrapper must be executable in the image")
+check("/opt/ha-opendesign/ha-pi-wrapper.mjs" in pi_command, "Pi command must use the controlled wrapper")
+check("OD_PI_PROFILE_KEY" in pi_wrapper and "PI_CODING_AGENT_DIR" in pi_wrapper, "Pi wrapper must provide a transient profile configuration")
+check("--no-session" in pi_wrapper and "ha-profile" in pi_wrapper, "Pi wrapper must force the active profile runtime")
 check("startServer" in entry and "desktopSlideRenderer: renderSlides" in entry, "slide renderer injection missing")
 check("desktopPdfExporter" not in entry and "exportPdf" not in entry, "misleading desktop vector PDF exporter must not be injected")
 check("host = '127.0.0.1'" in entry, "OpenDesign entry must bind loopback")
