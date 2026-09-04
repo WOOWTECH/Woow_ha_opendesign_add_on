@@ -57,6 +57,13 @@ PY
 # it in X-Ingress-Path. Nginx therefore receives '/' and must inject/rewrite the
 # prefix into the returned application shell.
 ingress_prefix=/api/hassio_ingress/abcdefghijklmnop
+docker cp tests/export-http-contract-e2e.mjs "$container:/tmp/export-http-contract-e2e.mjs"
+docker cp tests/fixtures/export-deck.html "$container:/tmp/export-deck.html"
+docker exec \
+  -e OD_EXPORT_BASE_URL=http://127.0.0.1:8099 \
+  -e OD_EXPORT_INGRESS_PATH="$ingress_prefix" \
+  -e OD_EXPORT_FIXTURE_PATH=/tmp/export-deck.html \
+  "$container" node /tmp/export-http-contract-e2e.mjs
 curl --fail-with-body -sSL -o "$tmp/ingress.html" \
   -H "X-Ingress-Path: $ingress_prefix" \
   "http://127.0.0.1:${port}/"
@@ -141,15 +148,13 @@ import sys
 body = json.load(open(sys.argv[1], encoding='utf-8'))
 assert 'ha-smoke' in json.dumps(body), body
 PY
-python3 - "$tmp/deck-file.json" <<'PY'
+python3 - "$tmp/deck-file.json" tests/fixtures/export-deck.html <<'PY'
 import json
 import sys
-html = '''<!doctype html><html><head><style>
-html,body{margin:0;background:#fff}.slide{width:640px;height:360px;display:block;color:#fff;font:32px sans-serif}
-.slide:first-of-type{background:#165dba}.slide:last-of-type{background:#a33}
-</style></head><body><section class="slide">Slide one</section><section class="slide">Slide two</section></body></html>'''
+from pathlib import Path
+
 with open(sys.argv[1], 'w', encoding='utf-8') as handle:
-    json.dump({'name': 'deck.html', 'content': html}, handle)
+    json.dump({'name': 'deck.html', 'content': Path(sys.argv[2]).read_text(encoding='utf-8')}, handle)
 PY
 curl --fail-with-body -sS -o "$tmp/deck-file-response.json" \
   -H "X-Ingress-Path: $ingress_prefix" \
