@@ -24,6 +24,10 @@ RUN apk add --no-cache \
       su-exec \
     && rm -rf /etc/nginx/http.d/* /var/cache/apk/*
 
+# OpenCode resolves the passwd-home directory when it starts as UID 1001.
+RUN mkdir -p /data/opendesign /home/open-design \
+    && chown -R open-design:open-design /data /home/open-design
+
 COPY runtime/package.json runtime/package-lock.json /opt/ha-opendesign/
 COPY runtime/opencode/package.json runtime/opencode/package-lock.json /opt/ha-opendesign/opencode/
 # Home Assistant Supervisor's BuildKit builder may supply a reduced PATH even
