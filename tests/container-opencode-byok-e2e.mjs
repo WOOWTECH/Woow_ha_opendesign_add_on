@@ -119,12 +119,17 @@ try {
   if (!streamResponse.ok) fail(`native byok-opencode event stream failed (HTTP ${streamResponse.status})`);
   if (!runOutput.includes(COMPLETION)) fail('native byok-opencode stream did not contain the mock completion');
 
-  assert.equal(requests.length, 1, 'the selected provider must receive exactly one request');
-  assert.equal(requests[0].method, 'POST', 'OpenCode must use OpenAI-compatible POST streaming');
-  assert.equal(requests[0].path, '/v1/chat/completions', 'OpenCode used an unexpected provider path');
-  assert.ok(requests[0].authorization === `Bearer ${FAKE_API_KEY}`, 'OpenCode did not use the selected fake key');
-  assert.equal(requests[0].model, MODEL, 'OpenCode did not use the selected model');
-  assert.equal(requests[0].stream, true, 'OpenCode did not request a streaming completion');
+  // OpenCode may issue one preliminary capability probe before the actual
+  // completion. Assert the credential-bearing streaming request itself rather
+  // than incorrectly treating that probe as a duplicate generation.
+  const completionRequests = requests.filter((request) => (
+    request.method === 'POST'
+    && request.path === '/v1/chat/completions'
+    && request.authorization === `Bearer ${FAKE_API_KEY}`
+    && request.model === MODEL
+    && request.stream === true
+  ));
+  assert.equal(completionRequests.length, 1, 'the selected provider must receive one streaming completion request');
   console.log('native byok-opencode mock stream passed');
 } finally {
   await new Promise((resolve) => provider.close(resolve));

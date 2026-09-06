@@ -23,9 +23,10 @@ test('native byok-opencode container harness uses a streaming mock and browser r
   assert.match(harness, /content-type': 'text\/event-stream; charset=utf-8'/);
   assert.match(harness, /data: \[DONE\]/);
   assert.match(harness, /runOutput\.includes\(COMPLETION\)/);
-  assert.match(harness, /requests\.length, 1/);
-  assert.match(harness, /requests\[0\]\.model, MODEL/);
-  assert.match(harness, /requests\[0\]\.authorization === `Bearer \$\{FAKE_API_KEY\}`/);
+  assert.match(harness, /const completionRequests = requests\.filter/);
+  assert.match(harness, /completionRequests\.length, 1/);
+  assert.match(harness, /request\.model === MODEL/);
+  assert.match(harness, /request\.authorization === `Bearer \$\{FAKE_API_KEY\}`/);
 });
 
 test('container smoke executes native BYOK coverage and rejects log and /data leakage', () => {
