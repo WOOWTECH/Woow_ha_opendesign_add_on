@@ -112,7 +112,7 @@ jobs:
             BUILD_REPOSITORY=${{ github.repository }}
           cache-from: type=gha,scope=opendesign-${{ matrix.arch }}
           cache-to: type=gha,scope=opendesign-${{ matrix.arch }},mode=max
-      - name: Verify locked OpenCode runtime as UID 1001
+      - name: Verify bundled agent CLIs as UID 1001
         run: |
           docker run --rm --platform ${{ matrix.platform }} --user 1001:1001 \
             --entrypoint /bin/sh \
@@ -121,9 +121,13 @@ jobs:
               test "$(id -u)" = 1001
               test "$(opencode --version)" = 1.18.29
               test "$(command -v opencode)" = /opt/ha-opendesign/opencode/node_modules/.bin/opencode
+              claude --version | grep -Fq 2.1.296
+              codex --version | grep -Fq 0.162.1
+              pi --version | grep -Fq 1.1.0
               ! command -v opencode-cli >/dev/null 2>&1
-              ! command -v pi >/dev/null 2>&1
-              test ! -e /usr/local/bin/pi
+              command -v claude >/dev/null
+              command -v codex >/dev/null
+              command -v pi >/dev/null
               test ! -e /opt/ha-opendesign/ha-pi-wrapper.mjs
             '
 
@@ -231,9 +235,13 @@ jobs:
             test "$(id -u)" = 1001
             test "$(opencode --version)" = 1.18.29
             test "$(command -v opencode)" = /opt/ha-opendesign/opencode/node_modules/.bin/opencode
+            claude --version | grep -Fq 2.1.296
+            codex --version | grep -Fq 0.162.1
+            pi --version | grep -Fq 1.1.0
+            command -v claude >/dev/null
+            command -v codex >/dev/null
+            command -v pi >/dev/null
             ! command -v opencode-cli >/dev/null 2>&1
-            ! command -v pi >/dev/null 2>&1
-            test ! -e /usr/local/bin/pi
             test ! -e /opt/ha-opendesign/ha-pi-wrapper.mjs
           '
           docker cp tests/container-opencode-byok-e2e.mjs "$container:/tmp/container-opencode-byok-e2e.mjs"
