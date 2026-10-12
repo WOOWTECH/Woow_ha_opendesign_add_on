@@ -314,4 +314,7 @@ jobs:
     if: github.ref_type == 'tag'
     permissions:
       contents: write
-    uses: WOOWTECH/Woow_HA_App_Store/.github/workflows/woow-addon-release.yml@main
+    # Pinned like every action here (tests/validate.py). The pinned workflow still runs
+    # the Store main tooling and registry, so only a change to the workflow file
+    # itself needs a new pin.
+    uses: WOOWTECH/Woow_HA_App_Store/.github/workflows/woow-addon-release.yml@2cf52485fef8f44771250c92ee73680d8b5b1619 # main 2026-10-12
