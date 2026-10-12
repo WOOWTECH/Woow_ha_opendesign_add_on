@@ -7,11 +7,11 @@
       "name": "Woow HA OpenDesign",
       "version": "0.1.8",
       "repository": "WOOWTECH/Woow_ha_opendesign_add_on",
-      "source_sha": "d982a10b02fe0ce5f856bf6a19a877074a4865c7",
+      "source_sha": "33f46158950cd1af62402ecade5ab3cb9654c1e8",
       "source_path": ".",
       "config_file": "config.yaml",
       "config_sha256": "sha256:2c7ef70282a04f150622161d383fbfffa1a4bfb57d4100e49fd34a6a3427c9d2",
-      "archive_sha256": "sha256:9dd69054050e3208da82453a865ba246a0ac62817836191176057282feca3004",
+      "archive_sha256": "sha256:621690b6aa02ca599fa51da0f542a68d5ba173b3c1a8305e99b804cf94d2d064",
       "context_fingerprint": "sha256:9c365d02e925510076c843a53e647c49eac365f8665f4fe22fbf0f6152f1fe59",
       "material_fingerprint": "sha256:399984874d941dc103582fd2ecd9ecf1d93d8d05f9267405edb339a3f395e9dc",
       "architectures": [
@@ -60,7 +60,7 @@
       },
       "delivery": "published-image",
       "validation": "manifest+architecture-images+configured-CI",
-      "publisher_run_id": "37411368265",
+      "publisher_run_id": "38209701602",
       "channel": "stable"
     }
   }
