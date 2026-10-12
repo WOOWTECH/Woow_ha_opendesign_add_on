@@ -304,3 +304,14 @@ jobs:
             BUILD_REPOSITORY=${{ github.repository }}
           cache-from: type=gha,scope=opendesign-${{ matrix.arch }}
           cache-to: type=gha,scope=opendesign-${{ matrix.arch }},mode=max
+
+  # The App Store ships only published Releases (registry ref_policy: release).
+  # Once the tag run has published both immutable images, the Store's shared
+  # workflow publishes the Release on the tag's commit.
+  release:
+    name: Release
+    needs: [publish-release]
+    if: github.ref_type == 'tag'
+    permissions:
+      contents: write
+    uses: WOOWTECH/Woow_HA_App_Store/.github/workflows/woow-addon-release.yml@main
