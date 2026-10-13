@@ -194,10 +194,13 @@ assert json.load(open(sys.argv[1], encoding='utf-8')).get('ok') is True
 PY
 docker exec "$container" sh -ceu '
   grep -qx persisted /data/opendesign/container-smoke-sentinel
-  test -f /data/opendesign/home/.claude/skills/container-smoke/SKILL.md
-  test -f /data/opendesign/home/.agents/skills/container-smoke/SKILL.md
-  test -f /data/opendesign/home/.pi/agent/skills/container-smoke/SKILL.md
-  test -f /data/opendesign/home/.config/opencode/skills/container-smoke/SKILL.md
+  for skills_path in \
+    /data/opendesign/home/.claude/skills \
+    /data/opendesign/home/.agents/skills \
+    /data/opendesign/home/.pi/agent/skills \
+    /data/opendesign/home/.config/opencode/skills; do
+    test ! -L "$skills_path"
+  done
   test ! -e /data/opendesign/credentials
   test ! -L /data/opendesign/credentials
   grep -qx retained /data/opendesign/legacy-credentials-target/sentinel
