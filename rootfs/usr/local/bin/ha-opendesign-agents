@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+export HOME=/data/opendesign/home
+case "${1:-status}" in
+  status) exec /usr/local/bin/node /opt/ha-opendesign/shared-agents.mjs --status ;;
+  workspace) printf '%s\n' /data/opendesign/shared/workspaces ;;
+  sync) exec /usr/local/bin/node /opt/ha-opendesign/shared-agents.mjs ;;
+  *)
+    printf 'Usage: ha-opendesign-agents [status|workspace|sync]\n' >&2
+    exit 2
+    ;;
+esac
