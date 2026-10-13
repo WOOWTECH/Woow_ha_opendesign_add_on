@@ -27,6 +27,16 @@ async function ensureRealDirectory(target) {
   }
 }
 
+async function ensureSafeParents(home, relative) {
+  const parts = relative.split(path.sep).slice(0, -1);
+  let current = home;
+  await ensureRealDirectory(home);
+  for (const part of parts) {
+    current = path.join(current, part);
+    await ensureRealDirectory(current);
+  }
+}
+
 async function migrateSkills(source, canonical, runtime) {
   const stat = await exists(source);
   if (!stat) {
@@ -261,6 +271,7 @@ export async function initializeSharedAgents({ home = process.env.HOME, dataDir 
 
   const skillLinks = {};
   for (const [runtime, relative] of Object.entries(RUNTIMES)) {
+    await ensureSafeParents(home, relative);
     skillLinks[runtime] = await migrateSkills(path.join(home, relative), path.join(sharedRoot, 'skills'), runtime);
   }
   const mcp = await syncMcp(home, sharedRoot);

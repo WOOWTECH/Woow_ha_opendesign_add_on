@@ -58,6 +58,14 @@ test('rejects a skills symlink that points outside the canonical store', async (
   await assert.rejects(initializeSharedAgents(f), /refusing unexpected skills symlink/);
 });
 
+test('rejects an agent config parent directory that is a symlink', async (t) => {
+  const f = await fixture(t);
+  const outside = path.join(f.root, 'outside');
+  await mkdir(outside);
+  await symlink(outside, path.join(f.home, '.claude'));
+  await assert.rejects(initializeSharedAgents(f), /refusing non-directory or symbolic-link path/);
+});
+
 test('translates MCP catalog to all native formats and preserves unrelated settings', async (t) => {
   const f = await fixture(t);
   await initializeSharedAgents(f);
