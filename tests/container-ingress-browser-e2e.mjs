@@ -191,7 +191,7 @@ try {
     context.waitForEvent('page'),
     terminalLink.click(),
   ]);
-  await terminalPage.waitForLoadState('domcontentloaded', { timeout: 15_000 });
+  await terminalPage.waitForURL((url) => url.pathname === `${prefix}/terminal/`, { timeout: 15_000 });
   assert.equal(new URL(terminalPage.url()).pathname, `${prefix}/terminal/`);
   let terminalSocketTimeout;
   const terminalSocket = await Promise.race([
