@@ -180,19 +180,40 @@ try {
   await terminalLink.waitFor({ timeout: 15_000 });
   assert.equal(await terminalLink.getAttribute('href'), `${prefix}/terminal/`);
   assert.equal(await terminalLink.getAttribute('target'), '_blank');
+  const terminalSocketPromise = new Promise((resolve) => {
+    context.on('page', (newPage) => {
+      newPage.on('websocket', (socket) => {
+        if (new URL(socket.url()).pathname.endsWith('/terminal/ws')) resolve(socket);
+      });
+    });
+  });
   const [terminalPage] = await Promise.all([
     context.waitForEvent('page'),
     terminalLink.click(),
   ]);
-  await terminalPage.waitForFunction(() => (
-    document.querySelector('.xterm')
-    && document.querySelector('.xterm-rows')?.innerText.includes('Codex login:')
-  ), null, { timeout: 20_000 });
+  await terminalPage.waitForLoadState('domcontentloaded', { timeout: 15_000 });
+  assert.equal(new URL(terminalPage.url()).pathname, `${prefix}/terminal/`);
+  let terminalSocketTimeout;
+  const terminalSocket = await Promise.race([
+    terminalSocketPromise,
+    new Promise((_, reject) => {
+      terminalSocketTimeout = setTimeout(() => reject(new Error('CLI terminal WebSocket did not connect through ingress')), 15_000);
+    }),
+  ]);
+  clearTimeout(terminalSocketTimeout);
+  const terminalInput = new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('CLI terminal did not accept keyboard input')), 8_000);
+    terminalSocket.on('framesent', ({ payload }) => {
+      if (payload && payload.length) {
+        clearTimeout(timeout);
+        resolve();
+      }
+    });
+  });
+  await terminalPage.bringToFront();
   await terminalPage.keyboard.type("printf 'TTYD_INGRESS_OK\\n'");
   await terminalPage.keyboard.press('Enter');
-  await terminalPage.waitForFunction(() => (
-    document.querySelector('.xterm-rows')?.innerText.includes('TTYD_INGRESS_OK')
-  ), null, { timeout: 10_000 });
+  await terminalInput;
   await terminalPage.close();
   try {
     await page.waitForFunction(
