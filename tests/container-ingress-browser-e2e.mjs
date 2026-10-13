@@ -88,6 +88,42 @@ proxy.on('connection', (socket) => {
 
 proxy.on('upgrade', (request, socket) => {
   publicRequests.push(request.url);
+  if (request.url.startsWith(`${prefix}/terminal/`)) {
+    const stripped = request.url.slice(prefix.length) || '/';
+    const upstreamRequest = http.request({
+      hostname: '127.0.0.1',
+      port: upstreamPort,
+      method: 'GET',
+      path: stripped,
+      headers: {
+        ...request.headers,
+        host: `127.0.0.1:${upstreamPort}`,
+        'x-ingress-path': prefix,
+      },
+    });
+    upstreamRequest.on('upgrade', (upstreamResponse, upstreamSocket, upstreamHead) => {
+      const headers = [];
+      for (let i = 0; i < upstreamResponse.rawHeaders.length; i += 2) {
+        headers.push(`${upstreamResponse.rawHeaders[i]}: ${upstreamResponse.rawHeaders[i + 1]}`);
+      }
+      socket.write(`HTTP/1.1 ${upstreamResponse.statusCode} ${upstreamResponse.statusMessage}\r\n${headers.join('\r\n')}\r\n\r\n`);
+      if (upstreamHead.length) socket.write(upstreamHead);
+      upstreamSocket.pipe(socket);
+      socket.pipe(upstreamSocket);
+      upstreamSocket.on('error', () => socket.destroy());
+      socket.on('error', () => upstreamSocket.destroy());
+    });
+    upstreamRequest.on('response', (upstreamResponse) => {
+      socket.end(`HTTP/1.1 ${upstreamResponse.statusCode} ${upstreamResponse.statusMessage}\r\n\r\n`);
+      upstreamResponse.resume();
+    });
+    upstreamRequest.on('error', (error) => {
+      console.error(`Supervisor-style terminal WebSocket upstream failure: ${error.message}`);
+      socket.destroy(error);
+    });
+    upstreamRequest.end();
+    return;
+  }
   if (request.url !== `${prefix}/__ha_probe/ws`) {
     socket.destroy();
     return;
@@ -144,6 +180,20 @@ try {
   await terminalLink.waitFor({ timeout: 15_000 });
   assert.equal(await terminalLink.getAttribute('href'), `${prefix}/terminal/`);
   assert.equal(await terminalLink.getAttribute('target'), '_blank');
+  const [terminalPage] = await Promise.all([
+    context.waitForEvent('page'),
+    terminalLink.click(),
+  ]);
+  await terminalPage.waitForFunction(() => (
+    document.querySelector('.xterm')
+    && document.querySelector('.xterm-rows')?.innerText.includes('Codex login:')
+  ), null, { timeout: 20_000 });
+  await terminalPage.keyboard.type("printf 'TTYD_INGRESS_OK\\n'");
+  await terminalPage.keyboard.press('Enter');
+  await terminalPage.waitForFunction(() => (
+    document.querySelector('.xterm-rows')?.innerText.includes('TTYD_INGRESS_OK')
+  ), null, { timeout: 10_000 });
+  await terminalPage.close();
   try {
     await page.waitForFunction(
       () => !document.body.textContent.includes('Loading OpenDesign…'),

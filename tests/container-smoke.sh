@@ -76,7 +76,7 @@ grep -Eq "(href|src)=\\\"$ingress_prefix/_next/" "$tmp/ingress.html"
 curl --fail-with-body -sS -o "$tmp/terminal.html" \
   -H "X-Ingress-Path: $ingress_prefix" \
   "http://127.0.0.1:${port}/terminal/"
-grep -Fq "$ingress_prefix/terminal/" "$tmp/terminal.html"
+grep -Eiq '<!doctype html|<html' "$tmp/terminal.html"
 
 # This models a browser request to <public-prefix>/api/health after Supervisor
 # path stripping: nginx sees /api/health plus the validated prefix header.
