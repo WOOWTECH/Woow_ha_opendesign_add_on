@@ -266,7 +266,8 @@ async function discoverSharedPlugins(sharedRoot, catalog) {
   return plugins;
 }
 
-export async function initializeSharedAgents({ home = process.env.HOME, dataDir = '/data/opendesign', runtimeEnv = process.env } = {}) {
+export async function initializeSharedAgents({ home, dataDir = '/data/opendesign', runtimeEnv = process.env } = {}) {
+  home ??= runtimeEnv.HA_OPENDESIGN_HOME || runtimeEnv.HOME;
   if (!home) throw new Error('HOME is required');
   const sharedRoot = path.join(dataDir, 'shared');
   await ensureRealDirectory(dataDir);
@@ -298,7 +299,9 @@ export async function initializeSharedAgents({ home = process.env.HOME, dataDir 
   return { sharedRoot, skills: skillLinks, mcp, plugins, workspace: path.join(sharedRoot, 'workspaces') };
 }
 
-export async function statusSharedAgents({ home = process.env.HOME, dataDir = '/data/opendesign', runtimeEnv = process.env } = {}) {
+export async function statusSharedAgents({ home, dataDir = '/data/opendesign', runtimeEnv = process.env } = {}) {
+  home ??= runtimeEnv.HA_OPENDESIGN_HOME || runtimeEnv.HOME;
+  if (!home) throw new Error('HOME is required');
   const sharedRoot = path.join(dataDir, 'shared');
   const skills = {};
   const paths = runtimePaths(home, runtimeEnv);

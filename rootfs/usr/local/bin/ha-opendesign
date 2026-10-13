@@ -125,6 +125,7 @@ export OD_DATA_DIR="$DATA_DIR"
 export OD_BIND_HOST=127.0.0.1
 export OD_PORT=7456
 export HOME="$DATA_DIR/home"
+export HA_OPENDESIGN_HOME="$DATA_DIR/home"
 export CLAUDE_CONFIG_DIR="$HOME/.claude"
 export CODEX_HOME="$HOME/.codex"
 export PI_CODING_AGENT_DIR="$HOME/.pi/agent"

@@ -88,7 +88,7 @@ check(re.search(r"^USER root$", dockerfile, re.M), "PID 1 must start as root to 
 check("su-exec open-design:open-design" in launcher, "launcher must drop OpenDesign and nginx to UID/GID 1001")
 check("npm" not in launcher.lower(), "launcher must not download/install CLI packages at startup")
 check("shared-agents.mjs" in launcher and "shared/skills" in launcher, "launcher must initialize shared agent resources on startup")
-for setting in ["CLAUDE_CONFIG_DIR=", "CODEX_HOME=", "PI_CODING_AGENT_DIR=", "XDG_CONFIG_HOME="]:
+for setting in ["HA_OPENDESIGN_HOME=", "CLAUDE_CONFIG_DIR=", "CODEX_HOME=", "PI_CODING_AGENT_DIR=", "XDG_CONFIG_HOME="]:
     check(setting in launcher, f"launcher must pin the CLI config location: {setting}")
 check((ROOT / "rootfs/usr/local/bin/ha-opendesign-agents").exists(), "shared agent status/sync CLI is missing")
 check((ROOT / "tests/shared-agents.test.mjs").exists(), "shared agent integration tests are missing")

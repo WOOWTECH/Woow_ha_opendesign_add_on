@@ -95,6 +95,21 @@ test('honors runtime config directory overrides while keeping them inside add-on
   await assert.rejects(initializeSharedAgents({ ...f, runtimeEnv: { ...f.runtimeEnv, CODEX_HOME: f.root } }), /must stay inside the add-on HOME/);
 });
 
+test('uses the explicit add-on home when su-exec supplies a different passwd HOME', async (t) => {
+  const f = await fixture(t);
+  const runtimeEnv = {
+    HOME: '/home/open-design',
+    HA_OPENDESIGN_HOME: f.home,
+    CLAUDE_CONFIG_DIR: path.join(f.home, '.claude'),
+    CODEX_HOME: path.join(f.home, '.codex'),
+    PI_CODING_AGENT_DIR: path.join(f.home, '.pi/agent'),
+    XDG_CONFIG_HOME: path.join(f.home, '.config'),
+  };
+  await initializeSharedAgents({ dataDir: f.dataDir, runtimeEnv });
+  const status = await statusSharedAgents({ dataDir: f.dataDir, runtimeEnv });
+  assert.deepEqual(status.skills, { claude: true, codex: true, pi: true, opencode: true });
+});
+
 test('translates MCP catalog to all native formats and preserves unrelated settings', async (t) => {
   const f = await fixture(t);
   await initializeSharedAgents(f);
