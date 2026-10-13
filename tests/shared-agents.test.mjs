@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { initializeSharedAgents, statusSharedAgents } from '../rootfs/opt/ha-opendesign/shared-agents.mjs';
 
@@ -11,7 +12,7 @@ async function fixture(t) {
   const dataDir = path.join(root, 'data');
   await mkdir(home);
   t.after(() => rm(root, { recursive: true, force: true }));
-  return { root, home, dataDir };
+  return { root, home, dataDir, runtimeEnv: {} };
 }
 
 test('initializes all skill paths as links to one persistent source and is repeatable', async (t) => {
@@ -66,6 +67,32 @@ test('rejects an agent config parent directory that is a symlink', async (t) => 
   await assert.rejects(initializeSharedAgents(f), /refusing non-directory or symbolic-link path/);
 });
 
+test('honors runtime config directory overrides while keeping them inside add-on HOME', async (t) => {
+  const f = await fixture(t);
+  f.runtimeEnv = {
+    CLAUDE_CONFIG_DIR: path.join(f.home, 'profiles/claude'),
+    CODEX_HOME: path.join(f.home, 'profiles/codex'),
+    PI_CODING_AGENT_DIR: path.join(f.home, 'profiles/pi'),
+    XDG_CONFIG_HOME: path.join(f.home, 'profiles/xdg'),
+  };
+  await initializeSharedAgents(f);
+  const canonical = path.join(f.dataDir, 'shared/skills');
+  for (const target of [
+    path.join(f.home, 'profiles/claude/skills'),
+    path.join(f.home, '.agents/skills'),
+    path.join(f.home, 'profiles/pi/skills'),
+    path.join(f.home, 'profiles/xdg/opencode/skills'),
+  ]) assert.equal(await realpath(target), canonical);
+  for (const file of [
+    path.join(f.home, '.claude.json'),
+    path.join(f.home, 'profiles/codex/config.toml'),
+    path.join(f.home, 'profiles/pi/mcp.json'),
+    path.join(f.home, 'profiles/xdg/opencode/opencode.json'),
+  ]) assert.doesNotReject(readFile(file, 'utf8'));
+
+  await assert.rejects(initializeSharedAgents({ ...f, runtimeEnv: { ...f.runtimeEnv, CODEX_HOME: f.root } }), /must stay inside the add-on HOME/);
+});
+
 test('translates MCP catalog to all native formats and preserves unrelated settings', async (t) => {
   const f = await fixture(t);
   await initializeSharedAgents(f);
@@ -97,6 +124,8 @@ test('translates MCP catalog to all native formats and preserves unrelated setti
   assert.match(codex, /\[mcp_servers\.ha-shared-docs\]/);
   assert.match(codex, /http_headers = \{ "X-Region" = "west" \}/);
   assert.doesNotMatch(codex, /mcp_servers\.ha-shared-disabled/);
+  const parsedToml = spawnSync('python3', ['-c', 'import sys,tomllib; tomllib.loads(sys.stdin.read())'], { input: codex, encoding: 'utf8' });
+  assert.equal(parsedToml.status, 0, parsedToml.stderr);
   assert.equal((await statusSharedAgents(f)).mcpServerCount, 2);
 });
 

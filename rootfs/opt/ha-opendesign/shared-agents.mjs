@@ -1,12 +1,28 @@
 import { copyFile, lstat, mkdir, readdir, readFile, rename, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const RUNTIMES = {
-  claude: '.claude/skills',
-  codex: '.agents/skills',
-  pi: '.pi/agent/skills',
-  opencode: '.config/opencode/skills',
-};
+const RUNTIME_NAMES = ['claude', 'codex', 'pi', 'opencode'];
+
+function runtimePaths(home, env = process.env) {
+  const insideHome = (value, fallback, name) => {
+    const result = path.resolve(value || fallback);
+    const relative = path.relative(home, result);
+    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      throw new Error(`${name} must stay inside the add-on HOME`);
+    }
+    return result;
+  };
+  const claudeHome = insideHome(env.CLAUDE_CONFIG_DIR, path.join(home, '.claude'), 'CLAUDE_CONFIG_DIR');
+  const codexHome = insideHome(env.CODEX_HOME, path.join(home, '.codex'), 'CODEX_HOME');
+  const piHome = insideHome(env.PI_CODING_AGENT_DIR, path.join(home, '.pi/agent'), 'PI_CODING_AGENT_DIR');
+  const xdgHome = insideHome(env.XDG_CONFIG_HOME, path.join(home, '.config'), 'XDG_CONFIG_HOME');
+  return {
+    claude: { skills: path.join(claudeHome, 'skills'), mcp: path.join(home, '.claude.json') },
+    codex: { skills: path.join(home, '.agents/skills'), mcp: path.join(codexHome, 'config.toml') },
+    pi: { skills: path.join(piHome, 'skills'), mcp: path.join(piHome, 'mcp.json') },
+    opencode: { skills: path.join(xdgHome, 'opencode/skills'), mcp: path.join(xdgHome, 'opencode/opencode.json') },
+  };
+}
 
 const MANAGED_START = '# BEGIN ha-opendesign shared MCP';
 const MANAGED_END = '# END ha-opendesign shared MCP';
@@ -172,30 +188,30 @@ async function atomicWrite(file, content) {
   await rename(tmp, file);
 }
 
-async function syncMcp(home, sharedRoot) {
+async function syncMcp(home, sharedRoot, paths) {
   const catalogFile = path.join(sharedRoot, 'mcp', 'servers.json');
   const catalog = JSON.parse(await readFile(catalogFile, 'utf8'));
   validateMcpCatalog(catalog);
   const servers = activeServers(catalog);
   const status = {};
 
-  const claudeFile = path.join(home, '.claude.json');
+  const claudeFile = paths.claude.mcp;
   await mergeJsonConfig(claudeFile, 'mcpServers', servers, jsonFor);
   status.claude = claudeFile;
 
-  const piFile = path.join(home, '.pi/agent/mcp.json');
+  const piFile = paths.pi.mcp;
   await mergeJsonConfig(piFile, 'mcpServers', servers, (server) => server.url
     ? { url: server.url, ...(server.headers ? { headers: server.headers } : {}) }
     : { command: server.command, args: server.args ?? [], ...(server.cwd ? { cwd: server.cwd } : {}) });
   status.pi = piFile;
 
-  const opencodeFile = path.join(home, '.config/opencode/opencode.json');
+  const opencodeFile = paths.opencode.mcp;
   await mergeJsonConfig(opencodeFile, 'mcp', servers, (server) => server.url
     ? { type: 'remote', url: server.url, ...(server.headers ? { headers: server.headers } : {}) }
     : { type: 'local', command: [server.command, ...(server.args ?? [])], ...(server.cwd ? { cwd: server.cwd } : {}) });
   status.opencode = opencodeFile;
 
-  const codexFile = path.join(home, '.codex/config.toml');
+  const codexFile = paths.codex.mcp;
   let codexText = '';
   const codexStat = await exists(codexFile);
   if (codexStat) {
@@ -238,7 +254,7 @@ async function discoverSharedPlugins(sharedRoot, catalog) {
     const missingServers = mcpServers.filter((name) => !mcpNames.has(name));
     const nativeAdapters = {};
     for (const [runtime, relative] of Object.entries(manifest.nativeAdapters ?? {})) {
-      if (!Object.hasOwn(RUNTIMES, runtime) || typeof relative !== 'string') throw new Error(`invalid native adapter declaration: ${manifestPath}`);
+      if (!RUNTIME_NAMES.includes(runtime) || typeof relative !== 'string') throw new Error(`invalid native adapter declaration: ${manifestPath}`);
       const adapterPath = path.resolve(directory, relative);
       if (!adapterPath.startsWith(`${directory}${path.sep}`)) throw new Error(`plugin adapter path escapes bundle: ${manifestPath}`);
       const adapterStat = await exists(adapterPath);
@@ -250,7 +266,7 @@ async function discoverSharedPlugins(sharedRoot, catalog) {
   return plugins;
 }
 
-export async function initializeSharedAgents({ home = process.env.HOME, dataDir = '/data/opendesign' } = {}) {
+export async function initializeSharedAgents({ home = process.env.HOME, dataDir = '/data/opendesign', runtimeEnv = process.env } = {}) {
   if (!home) throw new Error('HOME is required');
   const sharedRoot = path.join(dataDir, 'shared');
   await ensureRealDirectory(dataDir);
@@ -270,21 +286,24 @@ export async function initializeSharedAgents({ home = process.env.HOME, dataDir 
   else if (!catalogStat.isFile() || catalogStat.isSymbolicLink()) throw new Error(`refusing unsafe MCP catalog: ${catalogFile}`);
 
   const skillLinks = {};
-  for (const [runtime, relative] of Object.entries(RUNTIMES)) {
-    await ensureSafeParents(home, relative);
-    skillLinks[runtime] = await migrateSkills(path.join(home, relative), path.join(sharedRoot, 'skills'), runtime);
+  const paths = runtimePaths(home, runtimeEnv);
+  for (const [runtime, runtimePath] of Object.entries(paths)) {
+    await ensureSafeParents(home, path.relative(home, runtimePath.skills));
+    await ensureSafeParents(home, path.relative(home, runtimePath.mcp));
+    skillLinks[runtime] = await migrateSkills(runtimePath.skills, path.join(sharedRoot, 'skills'), runtime);
   }
-  const mcp = await syncMcp(home, sharedRoot);
+  const mcp = await syncMcp(home, sharedRoot, paths);
   const catalog = JSON.parse(await readFile(path.join(sharedRoot, 'mcp/servers.json'), 'utf8'));
   const plugins = await discoverSharedPlugins(sharedRoot, catalog);
   return { sharedRoot, skills: skillLinks, mcp, plugins, workspace: path.join(sharedRoot, 'workspaces') };
 }
 
-export async function statusSharedAgents({ home = process.env.HOME, dataDir = '/data/opendesign' } = {}) {
+export async function statusSharedAgents({ home = process.env.HOME, dataDir = '/data/opendesign', runtimeEnv = process.env } = {}) {
   const sharedRoot = path.join(dataDir, 'shared');
   const skills = {};
-  for (const [runtime, relative] of Object.entries(RUNTIMES)) {
-    const target = path.join(home, relative);
+  const paths = runtimePaths(home, runtimeEnv);
+  for (const [runtime, runtimePath] of Object.entries(paths)) {
+    const target = runtimePath.skills;
     const stat = await exists(target);
     skills[runtime] = stat?.isSymbolicLink()
       ? path.resolve(path.dirname(target), await (await import('node:fs/promises')).readlink(target)) === path.join(sharedRoot, 'skills')
