@@ -138,7 +138,7 @@ docker exec -u 1001:1001 "$container" sh -ceu '
 # store, then verify a skill written through one runtime is visible through all.
 docker exec -u 1001:1001 "$container" sh -ceu '
   status=$(ha-opendesign-agents status)
-  printf "%s" "$status" | python3 -c "import json,sys; s=json.load(sys.stdin); assert all(s[\"skills\"].values()); assert s[\"mcpServerCount\"] == 0"
+  printf "%s" "$status" | python3 -c "import json,sys; s=json.load(sys.stdin); assert all(v[\"linked\"] for v in s[\"skills\"].values()); assert s[\"mcpServerCount\"] == 0"
   mkdir /data/opendesign/shared/skills/container-smoke
   printf "---\\nname: container-smoke\\ndescription: shared test\\n---\\n" > /data/opendesign/shared/skills/container-smoke/SKILL.md
   for directory in \
