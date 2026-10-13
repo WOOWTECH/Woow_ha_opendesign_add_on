@@ -29,7 +29,9 @@ test('initializes all skill paths as links to one persistent source and is repea
   }
   const second = await initializeSharedAgents(f);
   assert.equal(first.sharedRoot, second.sharedRoot);
-  assert.equal((await statusSharedAgents(f)).mcpServerCount, 0);
+  const status = await statusSharedAgents(f);
+  assert.equal(status.mcpServerCount, 0);
+  assert.deepEqual(status.skills, { claude: true, codex: true, pi: true, opencode: true });
 });
 
 test('migrates preexisting skills and keeps a backup plus conflicting content', async (t) => {
