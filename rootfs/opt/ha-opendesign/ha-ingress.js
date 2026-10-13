@@ -4,6 +4,26 @@
   const prefix = window.__OD_INGRESS_PATH__ || '';
   if (!prefix) return;
 
+  // The web TTY is the interactive login path for preinstalled CLIs. The
+  // prefix carries HA's authenticated ingress token and must be retained.
+  const mountTerminalLink = () => {
+    if (!document.body || !document.createElement || document.getElementById('od-agent-terminal-link')) return;
+    const link = document.createElement('a');
+    link.id = 'od-agent-terminal-link';
+    link.href = `${prefix}/terminal/`;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = 'CLI Terminal';
+    link.setAttribute('aria-label', 'Open agent CLI terminal for login');
+    link.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483000;padding:10px 14px;border-radius:8px;background:#252a36;color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 10px #0005';
+    document.body.append(link);
+  };
+  if (document.readyState === 'loading' && document.addEventListener) {
+    document.addEventListener('DOMContentLoaded', mountTerminalLink, { once: true });
+  } else {
+    mountTerminalLink();
+  }
+
   // Supervisor's public prefix is transport routing, not an OpenDesign route.
   // Keep SPA history unprefixed so OpenDesign recognizes /settings and similar
   // routes. Project raw/preview iframe documents must retain their transport

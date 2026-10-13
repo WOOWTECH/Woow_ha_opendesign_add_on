@@ -179,6 +179,14 @@ test('nginx validates the ingress prefix and preserves streaming upgrades', () =
   assert.ok(nginx.indexOf('location ~ ^/api/projects/') < nginx.indexOf('location / {'), 'download bypass must precede the filtered shell location');
 });
 
+test('nginx exposes ttyd only through the ingress-prefixed terminal proxy', () => {
+  assert.match(nginx, /location \^~ \/terminal\//);
+  assert.match(nginx, /proxy_pass http:\/\/127\.0\.0\.1:7681;/);
+  assert.match(nginx, /sub_filter '\"\/terminal\/' '\"\$safe_ingress_path\/terminal\/'/);
+  assert.match(shim, /od-agent-terminal-link/);
+  assert.match(shim, /href = `\$\{prefix\}\/terminal\//);
+});
+
 test('repeated iframe src setAttribute with the same logical URL commits once', () => {
   // React reconciliation writes an unprefixed URL every render; the shim
   // scopes it to the ingress prefix once, then subsequent identical writes

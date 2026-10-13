@@ -10,7 +10,8 @@ OpenDesign **0.21.1**, packaged as a standalone Home Assistant add-on for `amd64
 - Downloads supported by the pinned upstream application: standalone HTML, ZIP, screenshot PDF, PNG/JPEG, and screenshot-based PPTX. **Editable PPTX is unsupported** and returns a clear error.
 - OpenCode `1.18.29` is bundled at an exact locked version for OpenDesign's native `byok-opencode` API runtime.
 - Claude Code `2.1.296`, Codex CLI `0.162.1`, and Pi Coding Agent `1.1.0` are preinstalled in the image and available to OpenDesign's Local AI discovery; no Paseo plugin or first-use CLI download is required.
-- Claude Code, Codex, Pi, and OpenCode share Agent Skills, a translated MCP catalog, and a persistent default workspace under `/data/opendesign/shared`; native plugin code remains runtime-specific.
+- OpenDesign owns installed plugins and skills in its persistent data directory. Install them from OpenDesign's **Plugins** page; the daemon stages the selected skill into the project and supplies it to whichever installed agent runtime runs that project.
+- A Home Assistant authenticated **CLI Terminal** entry lets you complete interactive logins for Claude Code, Codex, and Pi. OpenCode's additional model providers can be configured in OpenDesign **Settings → API providers**.
 
 [繁體中文](README_zh-TW.md) · [Add-on documentation](DOCS.md)
 
@@ -20,24 +21,25 @@ OpenDesign **0.21.1**, packaged as a standalone Home Assistant add-on for `amd64
 2. Add `https://github.com/WOOWTECH/Woow_ha_opendesign_add_on`.
 3. Install **Woow HA OpenDesign**, start it, and open **OpenDesign** from the sidebar.
 4. In **Settings**, configure API BYOK with your provider, model, and key. Those settings remain local to that browser.
-5. Open **Local AI → Rescan** to refresh the bundled Claude Code, Codex, and Pi entries, then sign in to each provider when you first use it.
-Shared skills live in `/data/opendesign/shared/skills`, and the MCP catalog is `/data/opendesign/shared/mcp/servers.json`; synchronization runs automatically at startup. If you have a shell in the container, `ha-opendesign-agents status` reports its state.
+5. Open **Local AI → Rescan** after installation or image updates. In OpenDesign, open **Plugins**, install the workflow you want, then select it in a project. Its Skills and plugin context are resolved by the native OpenDesign daemon for Claude Code, Codex, Pi, or OpenCode runs.
+6. Click **CLI Terminal** in the OpenDesign page to open the authenticated terminal. Run `claude` and `/login`, `codex login --device-auth`, or `pi` and use its `/login` command. The terminal uses the persistent `/data/opendesign/home` profile. OpenCode API providers can instead be entered in **Settings → API providers**.
 
 There are no add-on configuration options and no host directory mappings.
 
-See [shared agent capabilities](docs/shared-agent-capabilities.md) for compatibility, migration, MCP catalog, and plugin adapter details.
+See [agent and plugin setup](docs/shared-agent-capabilities.md) for how OpenDesign shares installed plugins/Skills across agent runtimes and how login/configuration is persisted.
 
 ## Architecture
 
 ```text
 browser → HA authenticated ingress → nginx :8099 → OpenDesign 127.0.0.1:7456
-                                                   ↘ /data/opendesign
-                                                   ↘ system Chromium renderer
+                                        ↘ loopback ttyd :7681 (CLI login TTY)
+                                        ↘ /data/opendesign
+                                        ↘ system Chromium renderer
 ```
 
 nginx validates `X-Ingress-Path`, rewrites initial root-relative URLs, and injects early browser shims covering fetch, XHR, EventSource, WebSocket, history, workers, dynamically inserted asset URLs, and the two web-mode export gaps. In HA Ingress the PDF action is redirected from the desktop-JSON endpoint to the binary screenshot-PDF endpoint, while PNG/JPEG saves call the daemon's headless image endpoint. Buffering and upstream compression are disabled to preserve streams and allow response rewriting.
 
-A root PID-1 launcher prepares Home Assistant's root-owned `/data` mount, safely removes the withdrawn legacy `/data/opendesign/credentials` path without following symlinks, then uses `su-exec` to run nginx and OpenDesign as upstream `open-design` UID/GID 1001. It forwards termination and stops the peer if either process exits; shutdown sends TERM, waits at most five seconds, then sends KILL and reaps. nginx keeps its PID and temporary files under `/tmp`.
+A root PID-1 launcher prepares Home Assistant's root-owned `/data` mount, safely removes the withdrawn legacy `/data/opendesign/credentials` path without following symlinks, then uses `su-exec` to run nginx, OpenDesign, and loopback-only ttyd as upstream `open-design` UID/GID 1001. The terminal is reachable only through HA-authenticated Ingress and starts a login shell in the persistent home directory. The launcher stops all three processes together; nginx keeps its PID and temporary files under `/tmp`.
 
 ## Development and validation
 

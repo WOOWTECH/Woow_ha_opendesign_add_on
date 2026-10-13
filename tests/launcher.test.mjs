@@ -53,6 +53,7 @@ set -Eeuo pipefail
 readonly SHUTDOWN_GRACE_SECONDS=1
 od_pid=''
 nginx_pid=''
+ttyd_pid=''
 stopping=0
 ${terminateChildren}
 bash -c 'trap "" TERM; while :; do sleep 1; done' &
@@ -68,13 +69,19 @@ echo reaped
   assert.match(result.stderr, /exceeded 1s grace; sending KILL/);
 });
 
-test('launcher supervises only OpenDesign and nginx as one unit', () => {
+test('launcher supervises OpenDesign, nginx, and the login TTY as one unit', () => {
   assert.doesNotMatch(launcher, /byok_pid|ha-byok-store|ha-byok-profiles/);
-  assert.match(launcher, /wait -n "\$od_pid" "\$nginx_pid"/);
+  assert.match(launcher, /wait -n "\$od_pid" "\$nginx_pid" "\$ttyd_pid"/);
   const shutdown = launcher.slice(launcher.indexOf('terminate_children() {'), launcher.indexOf('\n}\n\ntrap terminate_children') + 2);
-  assert.match(shutdown, /"\$od_pid" "\$nginx_pid"/);
+  assert.match(shutdown, /"\$od_pid" "\$nginx_pid" "\$ttyd_pid"/);
   assert.match(launcher, /terminate_children/);
   assert.match(launcher, /if \(\( status == 0 \)\)/);
+});
+
+test('launcher runs a loopback-only writable login TTY under the OpenDesign UID', () => {
+  assert.match(launcher, /\/usr\/bin\/ttyd[\s\S]*--interface 127\.0\.0\.1[\s\S]*--base-path \/terminal[\s\S]*--writable[\s\S]*--cwd "\$HOME" \/bin\/bash --login/);
+  assert.match(launcher, /ttyd_pid=\$!/);
+  assert.doesNotMatch(launcher, /shared-agents\.mjs/);
 });
 
 test('launcher removes obsolete credential symlinks without following them or deleting data', async () => {

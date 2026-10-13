@@ -87,7 +87,7 @@ check("OD_BIND_HOST=127.0.0.1" in dockerfile, "Dockerfile must set loopback bind
 check(re.search(r"^USER root$", dockerfile, re.M), "PID 1 must start as root to prepare HA's root-owned /data mount")
 check("su-exec open-design:open-design" in launcher, "launcher must drop OpenDesign and nginx to UID/GID 1001")
 check("npm" not in launcher.lower(), "launcher must not download/install CLI packages at startup")
-check("shared-agents.mjs" in launcher and "shared/skills" in launcher, "launcher must initialize shared agent resources on startup")
+check("shared-agents.mjs" not in launcher, "OpenDesign-native plugin/skill registries must not be replaced by startup symlinks")
 for setting in ["HA_OPENDESIGN_HOME=", "CLAUDE_CONFIG_DIR=", "CODEX_HOME=", "PI_CODING_AGENT_DIR=", "XDG_CONFIG_HOME="]:
     check(setting in launcher, f"launcher must pin the CLI config location: {setting}")
 check((ROOT / "rootfs/usr/local/bin/ha-opendesign-agents").exists(), "shared agent status/sync CLI is missing")
@@ -95,7 +95,7 @@ check((ROOT / "tests/shared-agents.test.mjs").exists(), "shared agent integratio
 check("paseo" not in dockerfile.lower() and "paseo" not in launcher.lower(), "retired Paseo runtime must not be installed or injected")
 check("prepare_owned_dir" in launcher and "chown -h" in launcher, "privileged /data preparation must reject/fail closed on symlinks")
 check("/usr/sbin/nginx -e stderr" in launcher, "unprivileged nginx must use its inherited stderr descriptor under HA procfs")
-for expected in ["bash", "chromium", "font-noto-cjk", "font-noto-emoji", "fontconfig", "gcompat", "libgcc", "libstdc++", "nginx", "python3", "ripgrep", "su-exec"]:
+for expected in ["bash", "chromium", "font-noto-cjk", "font-noto-emoji", "fontconfig", "gcompat", "libgcc", "libstdc++", "nginx", "python3", "ripgrep", "su-exec", "ttyd=1.7.7-r0"]:
     check(expected in dockerfile, f"expected image package missing: {expected}")
 check("/usr/local/bin/npm ci --omit=dev" in dockerfile, "locked production npm install must use the upstream absolute npm path for HA BuildKit")
 check("test -x /usr/local/bin/npm" in dockerfile, "image build must verify the absolute npm executable")
@@ -124,7 +124,7 @@ for removed_path in [
 ]:
     check(not (ROOT / removed_path).exists(), f"withdrawn persistent BYOK component remains: {removed_path}")
 check("ha-byok" not in nginx and "127.0.0.1:7457" not in nginx, "nginx must not expose the withdrawn profile sidecar")
-check("wait -n \"$od_pid\" \"$nginx_pid\"" in launcher and "byok_pid" not in launcher, "launcher must supervise only OpenDesign and nginx")
+check("wait -n \"$od_pid\" \"$nginx_pid\" \"$ttyd_pid\"" in launcher and "byok_pid" not in launcher, "launcher must supervise OpenDesign, nginx, and the CLI login TTY")
 check("remove_obsolete_credentials" in launcher and "rm -f -- \"$legacy_dir\"" in launcher, "launcher must safely remove obsolete credential symlinks")
 check("startServer" in entry and "desktopSlideRenderer: renderSlides" in entry, "slide renderer injection missing")
 check("desktopPdfExporter" not in entry and "exportPdf" not in entry, "misleading desktop vector PDF exporter must not be injected")
@@ -141,6 +141,7 @@ check("mkdtemp('/tmp/ha-opendesign-chromium-')" in renderer and "XDG_CONFIG_HOME
 check("--disable-web-security" not in renderer, "renderer must not disable browser web security")
 check("redirectPdfRequest" in export_bridge and "/export/image" in export_bridge, "browser PDF/image export bridge missing")
 check("proxy_pass http://127.0.0.1:7456" in nginx, "nginx may only forward to loopback OpenDesign")
+check("proxy_pass http://127.0.0.1:7681;" in nginx and "location ^~ /terminal/" in nginx, "interactive CLI TTY must be routed only through nginx")
 check("/tmp/ha-opendesign-nginx" in nginx, "unprivileged nginx temp paths missing")
 check("error_log stderr" in nginx and "access_log off" in nginx, "unprivileged nginx must not reopen HA Supervisor log pipes through /dev")
 check("container-smoke.sh" in workflow_text and "load: true" in workflow_text, "real amd64 container smoke lane missing")

@@ -10,7 +10,8 @@
 - 支援獨立 HTML、ZIP、截圖式 PDF、PNG/JPEG，以及每張投影片為圖片的 PPTX。**不支援可編輯 PPTX**，要求此模式時會明確失敗。
 - 映像以精確鎖定版本內建 OpenCode `1.18.29`，供 OpenDesign 原生 `byok-opencode` API runtime 使用。
 - 映像預裝 Claude Code `2.1.296`、Codex CLI `0.162.1` 與 Pi Coding Agent `1.1.0`，供 OpenDesign Local AI 掃描使用；不需要 Paseo 插件，也不會在首次使用時下載 CLI。
-- 四個 CLI 的 Agent Skills、MCP server 清單與工作檔案透過 `/data/opendesign/shared` 持久化共用；原生插件仍需各代理專用 adapter。
+- 透過 OpenDesign 原生 **Plugins** 頁面安裝的插件與 Skills，會由同一個 daemon 提供給 Claude Code、Codex、Pi、OpenCode 的專案執行流程。
+- OpenDesign 頁面提供受 HA Ingress 保護的 **CLI Terminal**，可在 GUI 中完成 Claude Code、Codex、Pi 的互動登入。OpenCode 更多 API provider 可在 **Settings → API providers** 設定。
 
 [English](README.md) · [附加元件說明](DOCS.md)
 
@@ -20,19 +21,20 @@
 2. 加入 `https://github.com/WOOWTECH/Woow_ha_opendesign_add_on`。
 3. 安裝並啟動 **Woow HA OpenDesign**，再從側邊欄開啟。
 4. 在 **設定** 設定 API BYOK 的供應商、模型與金鑰；設定只會保留在該瀏覽器。
-5. 開啟 **Local AI → Rescan** 重新掃描映像內建的 Claude Code、Codex 與 Pi，再依各供應商流程登入。
-共用技能放在 `/data/opendesign/shared/skills`，共用 MCP 清單放在 `/data/opendesign/shared/mcp/servers.json`；服務啟動時會自動同步。若有容器 shell，可用 `ha-opendesign-agents status` 檢查狀態。
+5. 開啟 **Local AI → Rescan** 重新掃描已預裝的 CLI。接著進入 **Plugins** 安裝工作流程，再於專案中選取；OpenDesign 會將所選 Skill stage 到專案並交給當次選用的代理。
+6. 點擊 OpenDesign 頁面上的 **CLI Terminal**，在終端執行 `claude` 後輸入 `/login`、`codex login --device-auth`，或執行 `pi` 後在 TUI 輸入 `/login`。登入狀態保存在 `/data/opendesign/home`。OpenCode API 供應商可在 **Settings → API providers** 設定。
 
 本附加元件沒有設定選項，也沒有主機目錄掛載。
 
-四個 CLI 的共用範圍、MCP 設定格式、外掛相容界線與操作方式請見[共用代理能力說明](docs/shared-agent-capabilities.md)。
+OpenDesign 原生插件、Skills 的共用方式及 CLI 登入步驟請見[代理與插件設定說明](docs/shared-agent-capabilities.md)。
 
 ## 架構
 
 ```text
 瀏覽器 → HA 驗證 Ingress → nginx :8099 → OpenDesign 127.0.0.1:7456
-                                               ↘ /data/opendesign
-                                               ↘ 系統 Chromium renderer
+                                  ↘ loopback ttyd :7681 (CLI 登入 TTY)
+                                  ↘ /data/opendesign
+                                  ↘ 系統 Chromium renderer
 ```
 
 nginx 先驗證 `X-Ingress-Path`，改寫初始回應中的根路徑 URL，並在應用程式碼之前注入 shim，以處理 fetch、XHR、EventSource、WebSocket、history、worker、動態資源 URL 與 web 模式的匯出缺口。HA Ingress 的 PDF 操作會改走可下載的截圖 PDF 二進位端點，PNG/JPEG 儲存則直接呼叫 daemon 的無頭 image 端點。SSE／WebSocket 不緩衝，且對上游停用壓縮以便安全改寫。

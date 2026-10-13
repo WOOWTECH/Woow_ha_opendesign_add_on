@@ -27,6 +27,7 @@ RUN apk add --no-cache \
       python3 \
       ripgrep \
       su-exec \
+      ttyd=1.7.7-r0 \
     && rm -rf /etc/nginx/http.d/* /var/cache/apk/*
 
 # OpenCode resolves the passwd-home directory when it starts as UID 1001.
@@ -54,6 +55,7 @@ RUN /usr/local/bin/npm ci --omit=dev --prefix /opt/ha-opendesign \
     && command -v bash \
     && command -v chromium-browser \
     && command -v nginx \
+    && command -v ttyd \
     && command -v su-exec
 
 COPY rootfs/ /

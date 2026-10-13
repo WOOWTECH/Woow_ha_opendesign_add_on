@@ -73,6 +73,10 @@ curl --fail-with-body -sSL -o "$tmp/ingress.html" \
   "http://127.0.0.1:${port}/"
 grep -Fq "window.__OD_INGRESS_PATH__=\"$ingress_prefix\"" "$tmp/ingress.html"
 grep -Eq "(href|src)=\\\"$ingress_prefix/_next/" "$tmp/ingress.html"
+curl --fail-with-body -sS -o "$tmp/terminal.html" \
+  -H "X-Ingress-Path: $ingress_prefix" \
+  "http://127.0.0.1:${port}/terminal/"
+grep -Fq "$ingress_prefix/terminal/" "$tmp/terminal.html"
 
 # This models a browser request to <public-prefix>/api/health after Supervisor
 # path stripping: nginx sees /api/health plus the validated prefix header.
@@ -89,7 +93,7 @@ docker exec "$container" sh -ceu '
   # PID 1 is root only to prepare the Supervisor root-owned /data mount.
   test "$(id -u)" = 0
   test "$(stat -c %u:%g /data/opendesign)" = 1001:1001
-  for process in node nginx; do
+  for process in node nginx ttyd; do
     pids=$(pidof "$process")
     test -n "$pids"
     for pid in $pids; do
@@ -134,24 +138,13 @@ docker exec -u 1001:1001 "$container" sh -ceu '
   printf persisted > /data/opendesign/container-smoke-sentinel
 '
 
-# Verify all four native skill discovery paths resolve to the same persistent
-# store, then verify a skill written through one runtime is visible through all.
+# Verify OpenDesign's own persistent plugin and skill registries are available.
+# The daemon resolves selected content and stages it for whichever adapter runs.
 docker exec -u 1001:1001 "$container" sh -ceu '
-  status=$(ha-opendesign-agents status)
-  printf "%s" "$status" | python3 -c "import json,sys; s=json.load(sys.stdin); assert all(v is True for v in s[\"skills\"].values()), s[\"skills\"]; assert s[\"mcpServerCount\"] == 0, s[\"mcpServerCount\"]"
-  mkdir /data/opendesign/shared/skills/container-smoke
-  printf "---\\nname: container-smoke\\ndescription: shared test\\n---\\n" > /data/opendesign/shared/skills/container-smoke/SKILL.md
-  for directory in \
-    /data/opendesign/home/.claude/skills \
-    /data/opendesign/home/.agents/skills \
-    /data/opendesign/home/.pi/agent/skills \
-    /data/opendesign/home/.config/opencode/skills; do
-    test -f "$directory/container-smoke/SKILL.md"
-  done
-  test "$(realpath /data/opendesign/home/.claude/skills)" = /data/opendesign/shared/skills
-  test "$(realpath /data/opendesign/home/.agents/skills)" = /data/opendesign/shared/skills
-  test "$(realpath /data/opendesign/home/.pi/agent/skills)" = /data/opendesign/shared/skills
-  test "$(realpath /data/opendesign/home/.config/opencode/skills)" = /data/opendesign/shared/skills
+  od plugin list --json >/dev/null
+  od skills list --json >/dev/null
+  test -d /data/opendesign
+  test ! -L /data/opendesign/home/.claude/skills
 '
 
 # Exercise the upstream native browser API request contract end-to-end: the

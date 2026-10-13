@@ -140,6 +140,10 @@ try {
   });
   await page.goto(`http://127.0.0.1:${proxyPort}${prefix}/`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await page.waitForFunction(() => window.__OD_HA_EXPORT_BRIDGE_INSTALLED__ === true, null, { timeout: 15_000 });
+  const terminalLink = page.getByRole('link', { name: 'Open agent CLI terminal for login' });
+  await terminalLink.waitFor({ timeout: 15_000 });
+  assert.equal(await terminalLink.getAttribute('href'), `${prefix}/terminal/`);
+  assert.equal(await terminalLink.getAttribute('target'), '_blank');
   try {
     await page.waitForFunction(
       () => !document.body.textContent.includes('Loading OpenDesign…'),
