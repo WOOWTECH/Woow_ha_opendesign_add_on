@@ -183,7 +183,7 @@ try {
   const terminalSocketPromise = new Promise((resolve) => {
     context.on('page', (newPage) => {
       newPage.on('websocket', (socket) => {
-        if (new URL(socket.url()).pathname.endsWith('/terminal/ws')) resolve(socket);
+        if (socket.url().endsWith('/terminal/ws')) resolve(socket);
       });
     });
   });
