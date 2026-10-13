@@ -138,11 +138,16 @@ docker exec -u 1001:1001 "$container" sh -ceu '
   printf persisted > /data/opendesign/container-smoke-sentinel
 '
 
-# Verify OpenDesign's own persistent plugin and skill registries are available.
+# Verify OpenDesign's native plugin and skill catalog APIs are available.
 # The daemon resolves selected content and stages it for whichever adapter runs.
+docker exec -u 1001:1001 "$container" python3 -c '
+import json, urllib.request
+for path, key in (("/api/plugins", "plugins"), ("/api/skills", "skills")):
+    with urllib.request.urlopen("http://127.0.0.1:7456" + path, timeout=10) as response:
+        data = json.load(response)
+    assert isinstance(data.get(key), list) and data[key], path + " native catalog is empty"
+'
 docker exec -u 1001:1001 "$container" sh -ceu '
-  od plugin list --json >/dev/null
-  od skills list --json >/dev/null
   test -d /data/opendesign
   test ! -L /data/opendesign/home/.claude/skills
 '
