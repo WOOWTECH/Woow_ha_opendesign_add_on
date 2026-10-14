@@ -24,7 +24,7 @@ if [[ -z "${GHCR_ACTOR:-}" || -z "${GHCR_TOKEN:-}" ]]; then
 fi
 accept='application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json'
 
-for arch in amd64 aarch64; do
+for arch in amd64; do
   repository="woowtech/woow-ha-opendesign-${arch}"
   if ! token_json=$(curl --fail --silent --show-error --location --get \
     --user "${GHCR_ACTOR}:${GHCR_TOKEN}" \
