@@ -1,0 +1,49 @@
+# THROWAWAY proof image (team ha-mcp, 2026-10-14). Not the add-on Dockerfile.
+#
+# The add-on Dockerfile on main pins OpenDesign 0.21.1 and asserts CLI versions the core-image stand-in does not
+# have; moving it onto the core image is ha-shell's work (P3a). This file reproduces just enough of the add-on on
+# top of the core-image stand-in (od-p1-candidate:local = paas-odoo-ci PR #318 output, OpenDesign 0.24.1, Alpine
+# 3.24, CPython 3.14) to run the REAL add-on launcher, nginx config and rootfs WITH mcp-runtime/integration.patch
+# applied. The two "built-in MCP" blocks below are copied verbatim from that patch.
+#
+# Build context: a copy of this repository with mcp-runtime/integration.patch applied (see run-proof.sh).
+ARG BUILD_FROM=od-p1-candidate:local
+
+# --- Built-in Woow OpenDesign MCP server: admin UI assets (verbatim from integration.patch) ---
+FROM ${BUILD_FROM} AS woow-mcp-ui
+USER root
+WORKDIR /ui
+COPY mcp-runtime/vendor/packages/mcp-admin-ui/ ./
+RUN /usr/local/bin/npm ci --include=dev --ignore-scripts --no-audit --no-fund \
+    && /usr/local/bin/npm run build \
+    && test -f dist/index.html
+
+FROM ${BUILD_FROM}
+USER root
+ENV NODE_ENV=production \
+    OD_BIND_HOST=127.0.0.1 \
+    OD_PORT=7456 \
+    OD_DATA_DIR=/data/opendesign \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+    PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser \
+    HOME=/data/opendesign/home
+# Stand-in for the add-on's package layer (the core image already has Chromium, CLIs and Python).
+RUN apk add --no-cache nginx ttyd su-exec bash \
+    && rm -rf /etc/nginx/http.d/* /var/cache/apk/* \
+    && mkdir -p /data/opendesign/home \
+    && chown -R open-design:open-design /data
+COPY runtime/package.json runtime/package-lock.json /opt/ha-opendesign/
+RUN /usr/local/bin/npm ci --omit=dev --prefix /opt/ha-opendesign && /usr/local/bin/npm cache clean --force
+COPY rootfs/ /
+RUN chmod 0755 /usr/local/bin/ha-opendesign /usr/local/bin/ha-opendesign-agents \
+      /opt/ha-opendesign/shared-agents.mjs /opt/ha-opendesign/headless-entry.mjs /opt/ha-opendesign/headless-renderer.mjs \
+    && chown -R open-design:open-design /opt/ha-opendesign
+
+# --- Built-in Woow OpenDesign MCP server (verbatim from integration.patch) ---
+COPY --from=woow-mcp-ui /ui/dist /opt/woow/packages/mcp-admin-ui/dist
+COPY mcp-runtime/ /tmp/mcp-runtime/
+RUN sh /tmp/mcp-runtime/install.sh && rm -rf /tmp/mcp-runtime
+
+USER root
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/ha-opendesign"]
+CMD []

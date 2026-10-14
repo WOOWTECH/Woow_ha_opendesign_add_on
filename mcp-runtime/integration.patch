@@ -1,0 +1,317 @@
+diff --git a/DOCS.md b/DOCS.md
+index 6626370..f99249d 100644
+--- a/DOCS.md
++++ b/DOCS.md
+@@ -8,10 +8,21 @@ Use OpenDesign's native **API BYOK** controls in Settings. Provider, model, and
+ 
+ ## Access and persistence
+ 
+-Use **Open Web UI** or the **OpenDesign** sidebar item. The service is ingress-only and has no published LAN port.
++Use **Open Web UI** or the **OpenDesign** sidebar item. OpenDesign itself is ingress-only; the only declared LAN port is the optional built-in MCP endpoint below, which is not mapped unless you map it.
+ 
+ Projects, the OpenDesign database, application configuration, connector data, and generated state are stored beneath `/data/opendesign`. API BYOK credentials are deliberately excluded. The add-on requests cold backup so this directory is captured while the service is stopped.
+ 
++## Built-in MCP server
++
++The add-on includes the Woow OpenDesign MCP server (it replaces the separate *Woow OpenDesign MCP Server* add-on). It always talks to this add-on's own OpenDesign; there is no connection to configure.
++
++- **Administration:** open `<the add-on's Ingress page>/mcp-admin/` as a Home Assistant administrator. There you reveal, rotate or revoke the token, choose which tools are enabled, and record the client endpoint. Every request re-checks that you are an HA administrator.
++- **LAN clients (Claude Code, Claude Desktop via a local bridge, other MCP clients):** map a host port to container port `8081/tcp` in the add-on's **Network** settings (unmapped by default), then connect to `http://<HA host>:<port>/mcp` with the header `Authorization: Bearer <token>`.
++- **Claude.ai custom connectors:** expose port 8081 through an HTTPS tunnel (for example Cloudflare) and use the connector URL shown on the administration page: `https://<tunnel host>/private_<token>/mcp`. Treat that URL like the token itself.
++- **Tools:** read-only by default (health, version, agents, projects, project files, file info, plugins, skills, runs). `delete_project` is off until an administrator grants it. Agent runs (`create_project`, `send_message`), raw file reads and connector listings are not offered.
++- **State:** `/data/mcp` (token, tool policy), included in the add-on's cold backup. A backup therefore contains the MCP token; rotate it after restoring a backup onto another system.
++- **Moving from the separate MCP add-on:** the built-in server has its own new token. Update each client's URL and token, then uninstall *Woow OpenDesign MCP Server*.
++
+ ## Exports
+ 
+ | Format | Support |
+diff --git a/Dockerfile b/Dockerfile
+index 00ea56a..bb38486 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -1,4 +1,15 @@
+ ARG BUILD_FROM=ghcr.io/nexu-io/od:0.21.1@sha256:441daca881e699657bacf28e0c27b16cd6be551dfff4bd63368dd74bec581f39
++
++# --- Built-in Woow OpenDesign MCP server: admin UI assets (mcp-runtime/, see mcp-runtime/README.md) ---
++# Built with the base image's own Node/npm from the vendored, lock-pinned UI sources; only dist/ is kept.
++FROM ${BUILD_FROM} AS woow-mcp-ui
++USER root
++WORKDIR /ui
++COPY mcp-runtime/vendor/packages/mcp-admin-ui/ ./
++RUN /usr/local/bin/npm ci --include=dev --ignore-scripts --no-audit --no-fund \
++    && /usr/local/bin/npm run build \
++    && test -f dist/index.html
++
+ FROM ${BUILD_FROM}
+ 
+ USER root
+@@ -69,6 +80,13 @@ RUN mkdir -p /data/opendesign \
+       /opt/ha-opendesign/headless-renderer.mjs \
+     && chown -R open-design:open-design /opt/ha-opendesign
+ 
++# --- Built-in Woow OpenDesign MCP server (mcp-runtime/, see mcp-runtime/README.md) ---
++# Pinned Woow MCP gateway + OpenDesign tools (mcp-runtime/VENDOR.json), hash-pinned wheels, users mcp (10001)
++# and ha-ingress (1002, nginx). Code is root-owned and read-only; state lives in /data/mcp (uid 10001, 0700).
++COPY --from=woow-mcp-ui /ui/dist /opt/woow/packages/mcp-admin-ui/dist
++COPY mcp-runtime/ /tmp/mcp-runtime/
++RUN sh /tmp/mcp-runtime/install.sh && rm -rf /tmp/mcp-runtime
++
+ ARG BUILD_ARCH=amd64
+ ARG BUILD_VERSION=0.1.10
+ ARG BUILD_DATE
+diff --git a/config.yaml b/config.yaml
+index 0824190..de08e23 100644
+--- a/config.yaml
++++ b/config.yaml
+@@ -17,6 +17,15 @@ panel_title: OpenDesign
+ panel_admin: true
+ watchdog: http://[HOST]:[PORT:8099]/api/health
+ backup: cold
++# Built-in OpenDesign MCP server: optional LAN MCP endpoint (Bearer token required). Not mapped by default;
++# the user maps a host port in the add-on's Network settings. Never administration.
++ports:
++  8081/tcp: null
++ports_description:
++  8081/tcp: Built-in OpenDesign MCP server (Bearer token required; not administration)
++# The built-in MCP administration page re-checks the HA user's admin role on every request through the
++# Supervisor Core WebSocket proxy (same verifier as the Woow MCP add-ons). The token is kept from OpenDesign.
++homeassistant_api: true
+ options: {}
+ schema: {}
+ image: ghcr.io/woowtech/woow-ha-opendesign-{arch}
+diff --git a/rootfs/etc/nginx/nginx.conf b/rootfs/etc/nginx/nginx.conf
+index 4120fdb..45c6c3a 100644
+--- a/rootfs/etc/nginx/nginx.conf
++++ b/rootfs/etc/nginx/nginx.conf
+@@ -88,6 +88,29 @@ http {
+             sub_filter "'/terminal/" "'$safe_ingress_path/terminal/";
+         }
+ 
++        # Built-in MCP server administration (token reveal/rotate/revoke, tool policy). Only the Supervisor
++        # Ingress peer may enter; the MCP gateway behind the Unix socket re-checks X-Remote-User-Id, CSRF and
++        # the user's Home Assistant admin role on every request. The socket is not reachable from UID 1001.
++        location = /mcp-admin {
++            allow 172.30.32.2;
++            deny all;
++            return 302 $safe_ingress_path/mcp-admin/;
++        }
++
++        location ^~ /mcp-admin/ {
++            allow 172.30.32.2;
++            deny all;
++            proxy_pass http://unix:/run/ha-opendesign-mcp/admin.sock:/;
++            proxy_http_version 1.1;
++            proxy_set_header Host localhost;
++            proxy_set_header Connection "";
++            proxy_set_header Origin "";
++            proxy_set_header X-Ingress-Path $safe_ingress_path/mcp-admin;
++            proxy_set_header Accept-Encoding "";
++            proxy_buffering on;
++            proxy_read_timeout 60s;
++        }
++
+         # Exported HTML and binary artifacts must remain byte-for-byte portable;
+         # do not apply the application-shell body filters to download routes.
+         location ~ ^/api/projects/[^/]+/export(?:/|$) {
+diff --git a/rootfs/usr/local/bin/ha-opendesign b/rootfs/usr/local/bin/ha-opendesign
+index 2bbcad7..770a4b4 100755
+--- a/rootfs/usr/local/bin/ha-opendesign
++++ b/rootfs/usr/local/bin/ha-opendesign
+@@ -7,6 +7,7 @@ readonly SHUTDOWN_GRACE_SECONDS=5
+ od_pid=''
+ nginx_pid=''
+ ttyd_pid=''
++mcp_pid=''
+ stopping=0
+ 
+ terminate_children() {
+@@ -16,7 +17,7 @@ terminate_children() {
+   stopping=1
+   trap - TERM INT
+   local pid deadline
+-  for pid in "$od_pid" "$nginx_pid" "$ttyd_pid"; do
++  for pid in "$od_pid" "$nginx_pid" "$ttyd_pid" "$mcp_pid"; do
+     if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+       kill -TERM "$pid" 2>/dev/null || true
+     fi
+@@ -25,7 +26,7 @@ terminate_children() {
+   deadline=$((SECONDS + SHUTDOWN_GRACE_SECONDS))
+   while (( SECONDS < deadline )); do
+     local alive=0
+-    for pid in "$od_pid" "$nginx_pid" "$ttyd_pid"; do
++    for pid in "$od_pid" "$nginx_pid" "$ttyd_pid" "$mcp_pid"; do
+       if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+         alive=1
+       fi
+@@ -34,13 +35,13 @@ terminate_children() {
+     sleep 0.1
+   done
+ 
+-  for pid in "$od_pid" "$nginx_pid" "$ttyd_pid"; do
++  for pid in "$od_pid" "$nginx_pid" "$ttyd_pid" "$mcp_pid"; do
+     if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+       echo "[ha-opendesign] process $pid exceeded ${SHUTDOWN_GRACE_SECONDS}s grace; sending KILL" >&2
+       kill -KILL "$pid" 2>/dev/null || true
+     fi
+   done
+-  for pid in "$od_pid" "$nginx_pid" "$ttyd_pid"; do
++  for pid in "$od_pid" "$nginx_pid" "$ttyd_pid" "$mcp_pid"; do
+     if [[ -n "$pid" ]]; then
+       wait "$pid" 2>/dev/null || true
+     fi
+@@ -50,7 +51,7 @@ terminate_children() {
+ trap terminate_children TERM INT
+ 
+ prepare_owned_dir() {
+-  local dir=$1
++  local dir=$1 owner=${2:-open-design:open-design}
+   if [[ -L "$dir" ]]; then
+     echo "[ha-opendesign] refusing symbolic-link runtime directory: $dir" >&2
+     exit 78
+@@ -70,7 +71,7 @@ prepare_owned_dir() {
+     exit 78
+   fi
+   # -h/--no-dereference prevents a late symlink swap from changing its target.
+-  chown -h open-design:open-design "$dir"
++  chown -h "$owner" "$dir"
+ }
+ 
+ remove_obsolete_credentials() {
+@@ -103,16 +104,15 @@ owned_dirs=(
+   "$DATA_DIR/shared/workspaces"
+   "$DATA_DIR/export-render"
+   "$DATA_DIR/export-pdf"
+-  "$NGINX_TMP"
+-  "$NGINX_TMP/client"
+-  "$NGINX_TMP/proxy"
+-  "$NGINX_TMP/fastcgi"
+-  "$NGINX_TMP/uwsgi"
+-  "$NGINX_TMP/scgi"
+ )
+ for dir in "${owned_dirs[@]}"; do
+   prepare_owned_dir "$dir"
+ done
++# nginx runs as its own UID (ha-ingress): it is the only process besides the built-in MCP server that may open
++# the MCP administration socket, which OpenDesign, its agents and the ttyd shell (UID 1001) cannot.
++for dir in "$NGINX_TMP" "$NGINX_TMP/client" "$NGINX_TMP/proxy" "$NGINX_TMP/fastcgi" "$NGINX_TMP/uwsgi" "$NGINX_TMP/scgi"; do
++  prepare_owned_dir "$dir" ha-ingress:ha-ingress
++done
+ for dir in "$DATA_DIR" "$DATA_DIR/home" "$DATA_DIR/export-render" "$DATA_DIR/export-pdf"; do
+   [[ ! -L "$dir" && -d "$dir" ]] || {
+     echo "[ha-opendesign] refusing unsafe chmod target: $dir" >&2
+@@ -132,24 +132,31 @@ export CODEX_HOME="$HOME/.codex"
+ export PI_CODING_AGENT_DIR="$HOME/.pi/agent"
+ export XDG_CONFIG_HOME="$HOME/.config"
+ 
+-su-exec open-design:open-design /usr/local/bin/node /opt/ha-opendesign/headless-entry.mjs &
++# Supervisor credentials stay with this root launcher and the built-in MCP bootstrap (which needs them for the
++# per-request HA admin-role check of /mcp-admin/). OpenDesign, its agents, nginx and the shell never see them.
++no_supervisor_env=(/usr/bin/env -u SUPERVISOR_TOKEN -u HASSIO_TOKEN)
++"${no_supervisor_env[@]}" su-exec open-design:open-design /usr/local/bin/node /opt/ha-opendesign/headless-entry.mjs &
+ od_pid=$!
+ # `-e stderr` uses the inherited descriptor directly; reopening /dev/stderr is
+-# denied when HA's root PID 1 drops to UID 1001 under its container procfs.
+-su-exec open-design:open-design /usr/sbin/nginx -e stderr -c /etc/nginx/nginx.conf &
++# denied when HA's root PID 1 drops to an unprivileged UID under its container procfs.
++"${no_supervisor_env[@]}" su-exec ha-ingress:ha-ingress /usr/sbin/nginx -e stderr -c /etc/nginx/nginx.conf &
+ nginx_pid=$!
+-su-exec open-design:open-design /usr/bin/ttyd \
++"${no_supervisor_env[@]}" su-exec open-design:open-design /usr/bin/ttyd \
+   --port 7681 --interface 127.0.0.1 --base-path /terminal \
+   --writable --check-origin --max-clients 1 \
+   --cwd "$HOME" /bin/bash --login &
+ ttyd_pid=$!
++# Built-in MCP server: starts as root only to own /data/mcp and /run/ha-opendesign-mcp, then drops itself to
++# UID 10001 (mcp). LAN MCP on 8081 (Bearer), administration via Ingress /mcp-admin/.
++/opt/woow/bin/ha-opendesign-mcp &
++mcp_pid=$!
+ 
+ set +e
+-wait -n "$od_pid" "$nginx_pid" "$ttyd_pid"
++wait -n "$od_pid" "$nginx_pid" "$ttyd_pid" "$mcp_pid"
+ status=$?
+ set -e
+ 
+-echo "[ha-opendesign] a required process exited (status=$status); stopping its peer" >&2
++echo "[ha-opendesign] a required process exited (status=$status); stopping its peers" >&2
+ terminate_children
+ 
+ # A clean but unexpected child exit still requires Supervisor to restart us.
+diff --git a/tests/launcher.test.mjs b/tests/launcher.test.mjs
+index 0f6492e..05f48e6 100644
+--- a/tests/launcher.test.mjs
++++ b/tests/launcher.test.mjs
+@@ -54,6 +54,7 @@ readonly SHUTDOWN_GRACE_SECONDS=1
+ od_pid=''
+ nginx_pid=''
+ ttyd_pid=''
++mcp_pid=''
+ stopping=0
+ ${terminateChildren}
+ bash -c 'trap "" TERM; while :; do sleep 1; done' &
+@@ -69,11 +70,11 @@ echo reaped
+   assert.match(result.stderr, /exceeded 1s grace; sending KILL/);
+ });
+ 
+-test('launcher supervises OpenDesign, nginx, and the login TTY as one unit', () => {
++test('launcher supervises OpenDesign, nginx, the login TTY and the built-in MCP server as one unit', () => {
+   assert.doesNotMatch(launcher, /byok_pid|ha-byok-store|ha-byok-profiles/);
+-  assert.match(launcher, /wait -n "\$od_pid" "\$nginx_pid" "\$ttyd_pid"/);
++  assert.match(launcher, /wait -n "\$od_pid" "\$nginx_pid" "\$ttyd_pid" "\$mcp_pid"/);
+   const shutdown = launcher.slice(launcher.indexOf('terminate_children() {'), launcher.indexOf('\n}\n\ntrap terminate_children') + 2);
+-  assert.match(shutdown, /"\$od_pid" "\$nginx_pid" "\$ttyd_pid"/);
++  assert.match(shutdown, /"\$od_pid" "\$nginx_pid" "\$ttyd_pid" "\$mcp_pid"/);
+   assert.match(launcher, /terminate_children/);
+   assert.match(launcher, /if \(\( status == 0 \)\)/);
+ });
+diff --git a/tests/run.sh b/tests/run.sh
+index 8258a15..14010b2 100755
+--- a/tests/run.sh
++++ b/tests/run.sh
+@@ -3,6 +3,9 @@ set -Eeuo pipefail
+ cd "$(dirname "$0")/.."
+ 
+ python3 tests/validate.py
++python3 mcp-runtime/tests/verify_vendor.py
++sh -n mcp-runtime/install.sh
++bash -n mcp-runtime/tests/e2e/run-proof.sh
+ python3 tests/workflow-policy.test.py
+ 
+ for file in rootfs/opt/ha-opendesign/*.js rootfs/opt/ha-opendesign/*.mjs tests/*.mjs; do
+diff --git a/tests/validate.py b/tests/validate.py
+index 9c51cde..3774e21 100755
+--- a/tests/validate.py
++++ b/tests/validate.py
+@@ -37,7 +37,8 @@ check(config.get("arch") == ["amd64", "aarch64"], "only amd64 and aarch64 are al
+ check(config.get("ingress") is True, "ingress must be enabled")
+ check(config.get("ingress_stream") is True, "ingress_stream must be enabled")
+ check(config.get("ingress_port") == 8099, "ingress port must be 8099")
+-check("ports" not in config and "ports_description" not in config and "webui" not in config, "LAN port publication is forbidden")
++check(config.get("ports") == {"8081/tcp": None} and set(config.get("ports_description", {})) == {"8081/tcp"} and "webui" not in config, "only the unmapped built-in MCP port 8081 may be declared")
++check(config.get("homeassistant_api") is True and not config.get("hassio_api") and not config.get("full_access"), "built-in MCP admin check needs homeassistant_api only")
+ check(config.get("backup") == "cold", "cold backup is required")
+ check(config.get("watchdog") == "http://[HOST]:[PORT:8099]/api/health", "watchdog must use ingress health route")
+ check(config.get("options") == {} and config.get("schema") == {}, "add-on options/schema must stay empty (no provider secrets)")
+@@ -85,7 +86,12 @@ check("EXPOSE" not in dockerfile, "Dockerfile must not expose a port")
+ check("OD_DATA_DIR=/data/opendesign" in dockerfile, "OD_DATA_DIR persistence is missing")
+ check("OD_BIND_HOST=127.0.0.1" in dockerfile, "Dockerfile must set loopback bind")
+ check(re.search(r"^USER root$", dockerfile, re.M), "PID 1 must start as root to prepare HA's root-owned /data mount")
+-check("su-exec open-design:open-design" in launcher, "launcher must drop OpenDesign and nginx to UID/GID 1001")
++check("su-exec open-design:open-design" in launcher, "launcher must drop OpenDesign and ttyd to UID/GID 1001")
++check("su-exec ha-ingress:ha-ingress /usr/sbin/nginx" in launcher, "launcher must run nginx as its own ha-ingress UID")
++check("/usr/bin/env -u SUPERVISOR_TOKEN -u HASSIO_TOKEN" in launcher, "OpenDesign-side processes must not inherit Supervisor credentials")
++check("/opt/woow/bin/ha-opendesign-mcp &" in launcher, "launcher must start the built-in MCP server")
++check("sh /tmp/mcp-runtime/install.sh" in dockerfile and "FROM ${BUILD_FROM} AS woow-mcp-ui" in dockerfile, "built-in MCP install missing")
++check("proxy_pass http://unix:/run/ha-opendesign-mcp/admin.sock:/;" in nginx and "allow 172.30.32.2;" in nginx, "MCP admin must be Ingress-peer only over the Unix socket")
+ check("npm" not in launcher.lower(), "launcher must not download/install CLI packages at startup")
+ check("shared-agents.mjs" not in launcher, "OpenDesign-native plugin/skill registries must not be replaced by startup symlinks")
+ for setting in ["HA_OPENDESIGN_HOME=", "CLAUDE_CONFIG_DIR=", "CODEX_HOME=", "PI_CODING_AGENT_DIR=", "XDG_CONFIG_HOME="]:
+@@ -124,7 +130,7 @@ for removed_path in [
+ ]:
+     check(not (ROOT / removed_path).exists(), f"withdrawn persistent BYOK component remains: {removed_path}")
+ check("ha-byok" not in nginx and "127.0.0.1:7457" not in nginx, "nginx must not expose the withdrawn profile sidecar")
+-check("wait -n \"$od_pid\" \"$nginx_pid\" \"$ttyd_pid\"" in launcher and "byok_pid" not in launcher, "launcher must supervise OpenDesign, nginx, and the CLI login TTY")
++check("wait -n \"$od_pid\" \"$nginx_pid\" \"$ttyd_pid\" \"$mcp_pid\"" in launcher and "byok_pid" not in launcher, "launcher must supervise OpenDesign, nginx, the CLI login TTY and the built-in MCP server")
+ check("remove_obsolete_credentials" in launcher and "rm -f -- \"$legacy_dir\"" in launcher, "launcher must safely remove obsolete credential symlinks")
+ check("startServer" in entry and "desktopSlideRenderer: renderSlides" in entry, "slide renderer injection missing")
+ check("desktopPdfExporter" not in entry and "exportPdf" not in entry, "misleading desktop vector PDF exporter must not be injected")
