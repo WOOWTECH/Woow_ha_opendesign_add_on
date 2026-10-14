@@ -6,7 +6,8 @@
 2. /run/ha-opendesign-mcp: recreated empty on every start, 0750 mcp:ha-ingress (nginx may open admin.sock);
    child/ inside it is 0700 mcp:mcp (only the gateway and its child).
 3. Irreversible drop to uid/gid 10001 with no supplementary groups, no_new_privs, then exec management.py with a
-   fixed environment. SUPERVISOR_TOKEN (for the vendored HA admin-role verifier) is the only inherited value.
+   fixed environment. Nothing is inherited: the built-in server makes no Supervisor/Core API call, so it never
+   receives SUPERVISOR_TOKEN (administration relies on Ingress login, owner decision 2026-10-14).
 """
 import ctypes
 import grp
@@ -72,9 +73,6 @@ def main():
     env = {'PATH': '/usr/bin:/bin', 'HOME': '/data/mcp',
            'PYTHONPATH': str(ROOT / 'packages/mcp-admin-core') + ':' + str(ROOT),
            'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONUNBUFFERED': '1'}
-    token = os.environ.get('SUPERVISOR_TOKEN')
-    if token:
-        env['SUPERVISOR_TOKEN'] = token
     os.chdir(ROOT)
     os.execve(python, [python, str(ROOT / 'ha_opendesign_mcp/management.py')], env)
 

@@ -9,8 +9,11 @@ health monitor and HA admin verifier are the vendored ones. Local differences:
    The child still sees Host 127.0.0.1:3000, which its DNS-rebinding guard accepts.
 3. Administration listens on ADMIN_SOCKET. nginx (8099, the add-on's Ingress port) forwards /mcp-admin/ to it
    only from the Supervisor peer; IngressSocketPeer turns "came through that socket" into the peer address the
-   vendored admin_identity() checks. Everything else (X-Remote-User-Id, CSRF, the per-request HA admin role
-   query) is the vendored admin app's own check.
+   vendored admin_identity() checks, which still requires one valid X-Remote-User-Id (set by Supervisor Ingress)
+   and the CSRF token. Owner decision 2026-10-14: NO per-request Home Assistant role lookup (no
+   homeassistant_api): the role provider passed to the vendored make_apps() is ingress_user(), which accepts every
+   user Supervisor Ingress authenticated. Accepted risk: any HA user who can open this add-on's Ingress can reach
+   /mcp-admin/ (the same gate as OpenDesign itself and its ttyd terminal).
 4. MCP clients use 0.0.0.0:8081 exactly as with the standalone add-on: Bearer on /mcp, and the token in the path
    on /private_<token>/mcp where the pinned gateway supports it.
 """
@@ -27,7 +30,7 @@ from starlette.responses import JSONResponse
 from mcp_admin_core import redact
 from mcp_admin_core.config import ConfigError
 from mcp_admin_core.gateway import make_apps
-from mcp_admin_core.ha_role import make_ha_admin_verifier
+from mcp_admin_core.ha_role import valid_user_id
 from mcp_admin_core.health import HealthMonitor
 from mcp_admin_core.lifecycle import Supervisor
 from mcp_admin_core.products import INSTRUCTIONS, ProductStore, TOOLS, child_spec
@@ -45,6 +48,15 @@ def pin_backend(store):
     if state.connection is None or state.connection.url != BACKEND_URL:
         store.update(connection={'url': BACKEND_URL})
     return store.load()
+
+
+async def ingress_user(user_id):
+    """Role provider for the vendored admin app: Ingress login is the authority (owner decision 2026-10-14).
+
+    The vendored admin_identity() has already required the Supervisor peer and exactly one X-Remote-User-Id; this
+    only re-checks its shape. No Supervisor/Core API call is made and no SUPERVISOR_TOKEN is needed.
+    """
+    return valid_user_id(user_id)
 
 
 def builtin_child_spec(state, directory):
@@ -105,7 +117,7 @@ async def run():
                 await manager.start()
 
             admin, mcp = make_apps(store, TOOLS[PRODUCT], child,
-                                   verify_admin=make_ha_admin_verifier(),
+                                   verify_admin=ingress_user,
                                    health=health.snapshot, backend_changed=backend_changed,
                                    server_name='woow-mcp-' + PRODUCT, instructions=INSTRUCTIONS.get(PRODUCT))
             common = dict(proxy_headers=False, access_log=False, log_level='warning', server_header=False,

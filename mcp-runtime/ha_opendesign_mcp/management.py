@@ -1,7 +1,7 @@
 """Trusted management boundary of the built-in MCP server, after the bootstrap's final exec (uid mcp).
 
 Applies the vendored packaging/management_launcher.guard() (no_new_privs, not dumpable, no core dumps: the same-uid
-child cannot read this process's environment or memory, which holds SUPERVISOR_TOKEN and the add-on token), then
+child cannot read this process's memory, which holds the add-on token), then
 runs ha_opendesign_mcp.runtime with runpy. Do not replace runpy with exec: exec resets dumpability.
 """
 import os

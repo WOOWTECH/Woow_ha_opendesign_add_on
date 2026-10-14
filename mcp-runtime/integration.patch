@@ -1,5 +1,5 @@
 diff --git a/DOCS.md b/DOCS.md
-index 6626370..f99249d 100644
+index 6626370..3728845 100644
 --- a/DOCS.md
 +++ b/DOCS.md
 @@ -8,10 +8,21 @@ Use OpenDesign's native **API BYOK** controls in Settings. Provider, model, and
@@ -15,7 +15,7 @@ index 6626370..f99249d 100644
 +
 +The add-on includes the Woow OpenDesign MCP server (it replaces the separate *Woow OpenDesign MCP Server* add-on). It always talks to this add-on's own OpenDesign; there is no connection to configure.
 +
-+- **Administration:** open `<the add-on's Ingress page>/mcp-admin/` as a Home Assistant administrator. There you reveal, rotate or revoke the token, choose which tools are enabled, and record the client endpoint. Every request re-checks that you are an HA administrator.
++- **Administration:** open `<the add-on's Ingress page>/mcp-admin/`. There you reveal, rotate or revoke the token, choose which tools are enabled, and record the client endpoint. Access is the add-on's Home Assistant Ingress login, the same as OpenDesign and its terminal: there is no separate administrator check, so any Home Assistant user who can open this add-on can reach this page.
 +- **LAN clients (Claude Code, Claude Desktop via a local bridge, other MCP clients):** map a host port to container port `8081/tcp` in the add-on's **Network** settings (unmapped by default), then connect to `http://<HA host>:<port>/mcp` with the header `Authorization: Bearer <token>`.
 +- **Claude.ai custom connectors:** expose port 8081 through an HTTPS tunnel (for example Cloudflare) and use the connector URL shown on the administration page: `https://<tunnel host>/private_<token>/mcp`. Treat that URL like the token itself.
 +- **Tools:** read-only by default (health, version, agents, projects, project files, file info, plugins, skills, runs). `delete_project` is off until an administrator grants it. Agent runs (`create_project`, `send_message`), raw file reads and connector listings are not offered.
@@ -26,7 +26,7 @@ index 6626370..f99249d 100644
  
  | Format | Support |
 diff --git a/Dockerfile b/Dockerfile
-index 00ea56a..bb38486 100644
+index 00ea56a..8d7705f 100644
 --- a/Dockerfile
 +++ b/Dockerfile
 @@ -1,4 +1,15 @@
@@ -60,10 +60,10 @@ index 00ea56a..bb38486 100644
  ARG BUILD_VERSION=0.1.10
  ARG BUILD_DATE
 diff --git a/config.yaml b/config.yaml
-index 0824190..de08e23 100644
+index 0824190..108bb5f 100644
 --- a/config.yaml
 +++ b/config.yaml
-@@ -17,6 +17,15 @@ panel_title: OpenDesign
+@@ -17,6 +17,12 @@ panel_title: OpenDesign
  panel_admin: true
  watchdog: http://[HOST]:[PORT:8099]/api/health
  backup: cold
@@ -73,23 +73,21 @@ index 0824190..de08e23 100644
 +  8081/tcp: null
 +ports_description:
 +  8081/tcp: Built-in OpenDesign MCP server (Bearer token required; not administration)
-+# The built-in MCP administration page re-checks the HA user's admin role on every request through the
-+# Supervisor Core WebSocket proxy (same verifier as the Woow MCP add-ons). The token is kept from OpenDesign.
-+homeassistant_api: true
  options: {}
  schema: {}
  image: ghcr.io/woowtech/woow-ha-opendesign-{arch}
 diff --git a/rootfs/etc/nginx/nginx.conf b/rootfs/etc/nginx/nginx.conf
-index 4120fdb..45c6c3a 100644
+index 4120fdb..a04bc00 100644
 --- a/rootfs/etc/nginx/nginx.conf
 +++ b/rootfs/etc/nginx/nginx.conf
-@@ -88,6 +88,29 @@ http {
+@@ -88,6 +88,30 @@ http {
              sub_filter "'/terminal/" "'$safe_ingress_path/terminal/";
          }
  
 +        # Built-in MCP server administration (token reveal/rotate/revoke, tool policy). Only the Supervisor
-+        # Ingress peer may enter; the MCP gateway behind the Unix socket re-checks X-Remote-User-Id, CSRF and
-+        # the user's Home Assistant admin role on every request. The socket is not reachable from UID 1001.
++        # Ingress peer may enter; the MCP gateway behind the Unix socket requires the Ingress user header and a
++        # CSRF token. Accepted risk (owner decision 2026-10-14): no separate HA admin-role check, so any HA user
++        # who can open this add-on's Ingress can reach it. The socket is not reachable from UID 1001.
 +        location = /mcp-admin {
 +            allow 172.30.32.2;
 +            deny all;
@@ -114,7 +112,7 @@ index 4120fdb..45c6c3a 100644
          # do not apply the application-shell body filters to download routes.
          location ~ ^/api/projects/[^/]+/export(?:/|$) {
 diff --git a/rootfs/usr/local/bin/ha-opendesign b/rootfs/usr/local/bin/ha-opendesign
-index 2bbcad7..770a4b4 100755
+index 2bbcad7..72f2e78 100755
 --- a/rootfs/usr/local/bin/ha-opendesign
 +++ b/rootfs/usr/local/bin/ha-opendesign
 @@ -7,6 +7,7 @@ readonly SHUTDOWN_GRACE_SECONDS=5
@@ -204,8 +202,8 @@ index 2bbcad7..770a4b4 100755
  export XDG_CONFIG_HOME="$HOME/.config"
  
 -su-exec open-design:open-design /usr/local/bin/node /opt/ha-opendesign/headless-entry.mjs &
-+# Supervisor credentials stay with this root launcher and the built-in MCP bootstrap (which needs them for the
-+# per-request HA admin-role check of /mcp-admin/). OpenDesign, its agents, nginx and the shell never see them.
++# Supervisor credentials stay with this root launcher. No child needs them: OpenDesign, its agents, nginx, the
++# shell and the built-in MCP server (administration relies on HA Ingress login) all start without them.
 +no_supervisor_env=(/usr/bin/env -u SUPERVISOR_TOKEN -u HASSIO_TOKEN)
 +"${no_supervisor_env[@]}" su-exec open-design:open-design /usr/local/bin/node /opt/ha-opendesign/headless-entry.mjs &
  od_pid=$!
@@ -223,7 +221,7 @@ index 2bbcad7..770a4b4 100755
  ttyd_pid=$!
 +# Built-in MCP server: starts as root only to own /data/mcp and /run/ha-opendesign-mcp, then drops itself to
 +# UID 10001 (mcp). LAN MCP on 8081 (Bearer), administration via Ingress /mcp-admin/.
-+/opt/woow/bin/ha-opendesign-mcp &
++"${no_supervisor_env[@]}" /opt/woow/bin/ha-opendesign-mcp &
 +mcp_pid=$!
  
  set +e
@@ -279,7 +277,7 @@ index 8258a15..14010b2 100755
  
  for file in rootfs/opt/ha-opendesign/*.js rootfs/opt/ha-opendesign/*.mjs tests/*.mjs; do
 diff --git a/tests/validate.py b/tests/validate.py
-index 9c51cde..3774e21 100755
+index 9c51cde..18fbe3c 100755
 --- a/tests/validate.py
 +++ b/tests/validate.py
 @@ -37,7 +37,8 @@ check(config.get("arch") == ["amd64", "aarch64"], "only amd64 and aarch64 are al
@@ -288,7 +286,7 @@ index 9c51cde..3774e21 100755
  check(config.get("ingress_port") == 8099, "ingress port must be 8099")
 -check("ports" not in config and "ports_description" not in config and "webui" not in config, "LAN port publication is forbidden")
 +check(config.get("ports") == {"8081/tcp": None} and set(config.get("ports_description", {})) == {"8081/tcp"} and "webui" not in config, "only the unmapped built-in MCP port 8081 may be declared")
-+check(config.get("homeassistant_api") is True and not config.get("hassio_api") and not config.get("full_access"), "built-in MCP admin check needs homeassistant_api only")
++check(not config.get("homeassistant_api") and not config.get("hassio_api") and not config.get("full_access"), "built-in MCP administration relies on Ingress login; no HA/Supervisor API access")
  check(config.get("backup") == "cold", "cold backup is required")
  check(config.get("watchdog") == "http://[HOST]:[PORT:8099]/api/health", "watchdog must use ingress health route")
  check(config.get("options") == {} and config.get("schema") == {}, "add-on options/schema must stay empty (no provider secrets)")
@@ -300,7 +298,7 @@ index 9c51cde..3774e21 100755
 +check("su-exec open-design:open-design" in launcher, "launcher must drop OpenDesign and ttyd to UID/GID 1001")
 +check("su-exec ha-ingress:ha-ingress /usr/sbin/nginx" in launcher, "launcher must run nginx as its own ha-ingress UID")
 +check("/usr/bin/env -u SUPERVISOR_TOKEN -u HASSIO_TOKEN" in launcher, "OpenDesign-side processes must not inherit Supervisor credentials")
-+check("/opt/woow/bin/ha-opendesign-mcp &" in launcher, "launcher must start the built-in MCP server")
++check('"${no_supervisor_env[@]}" /opt/woow/bin/ha-opendesign-mcp &' in launcher, "launcher must start the built-in MCP server without Supervisor credentials")
 +check("sh /tmp/mcp-runtime/install.sh" in dockerfile and "FROM ${BUILD_FROM} AS woow-mcp-ui" in dockerfile, "built-in MCP install missing")
 +check("proxy_pass http://unix:/run/ha-opendesign-mcp/admin.sock:/;" in nginx and "allow 172.30.32.2;" in nginx, "MCP admin must be Ingress-peer only over the Unix socket")
  check("npm" not in launcher.lower(), "launcher must not download/install CLI packages at startup")

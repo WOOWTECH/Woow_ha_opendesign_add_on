@@ -4,7 +4,8 @@
 #   IMG=team-ha-mcp/od-mcp-proof:local mcp-runtime/tests/e2e/run-proof.sh <evidence-dir>
 #
 # Topology on a throwaway Docker network shaped like HA's hassio network (172.30.32.0/23):
-#   172.30.32.2  fake Supervisor (alias "supervisor"): Core WebSocket proxy for the admin-role check + Ingress peer
+#   172.30.32.2  stand-in for the Supervisor Ingress peer (alias "supervisor"). It serves NOTHING: administration
+#                must work with no Supervisor/Core API (owner decision 2026-10-14, Ingress login only)
 #   172.30.33.10 the add-on image (real launcher: OpenDesign, nginx, ttyd, built-in MCP), /data on a fresh volume
 #   172.30.33.20 a LAN-style MCP client
 # Throwaway credentials are generated here and live only in this shell; every evidence file is checked for them.
@@ -55,8 +56,7 @@ cleanup
 docker network create --subnet 172.30.32.0/23 $NET >/dev/null
 docker volume create $P-data >/dev/null
 docker run -d --name $P-supervisor --network $NET --ip 172.30.32.2 --network-alias supervisor \
-  -e FAKE_SUPERVISOR_TOKEN="$SUP_TOKEN" -e FAKE_ADMIN_ID="$FAKE_ADMIN_ID" -e FAKE_USER_ID="$FAKE_USER_ID" \
-  -v "$E2E:/e2e:ro" --entrypoint $PY "$IMG" /e2e/fake_supervisor.py >/dev/null
+  -v "$E2E:/e2e:ro" --entrypoint sleep "$IMG" infinity >/dev/null
 docker run -d --name $P-addon --network $NET --ip $ADDON --hostname local-woow-ha-opendesign \
   -e SUPERVISOR_TOKEN="$SUP_TOKEN" -v $P-data:/data --restart on-failure:3 "$IMG" >/dev/null
 docker run -d --name $P-client --network $NET --ip 172.30.33.20 -v "$E2E:/e2e:ro" --entrypoint sleep "$IMG" infinity >/dev/null
@@ -80,7 +80,7 @@ s02() {
   probe '' ready
 }
 s03() {
-  log "Ingress /mcp-admin/ from the Supervisor peer (fake HA admin-role WebSocket)"
+  log "Ingress /mcp-admin/ from the Supervisor peer (no Supervisor/Core API exists on this network)"
   admin checks
   log "/mcp-admin/ from a non-Supervisor peer (LAN client) -> nginx"
   docker exec $P-client $PY -c "import httpx; r = httpx.get('http://$ADDON:8099/mcp-admin/api/bootstrap', headers={'X-Remote-User-Id': '$FAKE_ADMIN_ID'}); print('status', r.status_code)"

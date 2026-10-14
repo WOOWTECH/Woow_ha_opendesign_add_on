@@ -7,6 +7,7 @@ separate *Woow OpenDesign MCP Server* add-on. Design: `docs/plans/2026-10-14-bui
 |---|---|
 | `vendor/` | Pinned copy of `WOOWTECH/Woow_ha_mcp_addons` (gateway, policy, store, lifecycle, health, HA admin verifier, admin UI sources, vendored OpenDesign tools). Never edited by hand. |
 | `VENDOR.json` | Source commit and sha256 of every vendored file. |
+| `PROVENANCE.md` | Origin and license of the vendored OpenDesign MCP server (WoowTech Gitea `woow-mcp-server`). |
 | `vendor.sh` | Re-vendor from a local clone at a full commit sha. |
 | `requirements/` | Hash-pinned wheels for the base image's Python; versions equal the source `uv.lock` files. `lock.sh` regenerates. |
 | `ha_opendesign_mcp/` | Local glue: fixed loopback backend, Unix sockets for admin and child, runtime entry. |

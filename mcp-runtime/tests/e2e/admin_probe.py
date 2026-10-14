@@ -1,4 +1,4 @@
-"""Ingress-side probe of /mcp-admin/ (test-only). Run inside the fake Supervisor container (peer 172.30.32.2).
+"""Ingress-side probe of /mcp-admin/ (test-only). Run inside the Ingress-peer container (172.30.32.2).
 
 usage: python admin_probe.py <addon-host> <action>
   checks        page + bootstrap as admin; fixed backend refused; non-admin / no user refused (JSON lines)
@@ -7,7 +7,7 @@ usage: python admin_probe.py <addon-host> <action>
   revoke        print the HTTP status
   grant-delete  enable the delete_project write grant; print status
   ungrant       remove all write grants; print status
-Env: FAKE_ADMIN_ID, FAKE_USER_ID.
+Env: FAKE_ADMIN_ID, FAKE_USER_ID (two arbitrary Ingress user ids; there is no role lookup to tell them apart).
 """
 import json
 import os
@@ -58,7 +58,8 @@ def main():
                               'health': data.get('health')}, sort_keys=True))
             fixed = mutate('backend', {'connection': {'url': 'http://example.invalid:7456'}}, 'PUT')
             print(json.dumps({'case': 'PUT backend (fixed loopback daemon)', 'status': fixed.status_code}))
-            print(json.dumps({'case': 'bootstrap (non-admin HA user)', 'status': bootstrap(plain).status_code}))
+            print(json.dumps({'case': 'bootstrap (another HA user; accepted risk: no role lookup)',
+                              'status': bootstrap(plain).status_code}))
             print(json.dumps({'case': 'bootstrap (no X-Remote-User-Id)', 'status': bootstrap(None).status_code}))
             nocsrf = client.post(base + '/api/token/reveal', headers=headers(admin))
             print(json.dumps({'case': 'token/reveal without CSRF', 'status': nocsrf.status_code}))
