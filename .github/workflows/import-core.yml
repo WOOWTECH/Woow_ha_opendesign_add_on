@@ -1,0 +1,90 @@
+name: Import open-design-core
+
+# Copies one approved open-design-core image from WoowTech JCR to the public package
+# ghcr.io/woowtech/open-design-core without rebuilding it: same manifest digest, so the
+# HA add-on and the PaaS image are built FROM byte-identical cores.
+#
+# The core is built and approved once in woow-paas/paas-odoo-ci (build-open-design-image.yml;
+# its "open-design-core digest" notice prints the tag and digest to enter here). HA
+# Supervisor local builds cannot use digests, so the copy also gets the fixed, immutable
+# tag (the JCR tag, plus an optional alias such as 0.24.1-w3).
+#
+# Secrets: JCR_RO_USERNAME / JCR_RO_PASSWORD = a read-only JCR account limited to
+# woow-paas-docker-local/open-design-core. GHCR is written with this job's GITHUB_TOKEN.
+# First import only: an organization owner sets the new package to Public, then re-runs
+# with the same inputs (the re-run only verifies; see .github/scripts/import-core.sh).
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Approved JCR tag of open-design-core (YYYYMMDD.HHMM); also the GHCR tag"
+        required: true
+        type: string
+      digest:
+        description: "Manifest digest of that tag (sha256:...), from the paas-odoo-ci run"
+        required: true
+        type: string
+      alias_tag:
+        description: "Optional extra immutable GHCR tag, e.g. 0.24.1-w3"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: import-core
+  cancel-in-progress: false
+
+jobs:
+  import:
+    # Only the reviewed workflow on main may publish.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Ensure skopeo and jq
+        run: |
+          set -euo pipefail
+          if ! command -v skopeo >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq --no-install-recommends skopeo jq
+          fi
+          skopeo --version
+          jq --version
+
+      - name: Log in to JCR (read-only) and GHCR
+        env:
+          JCR_RO_USERNAME: ${{ secrets.JCR_RO_USERNAME }}
+          JCR_RO_PASSWORD: ${{ secrets.JCR_RO_PASSWORD }}
+          GHCR_ACTOR: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ -n "${JCR_RO_USERNAME}" ] && [ -n "${JCR_RO_PASSWORD}" ] \
+            || { echo "::error::repository secrets JCR_RO_USERNAME / JCR_RO_PASSWORD are not set"; exit 1; }
+          auth="${RUNNER_TEMP}/registry-auth.json"
+          printf '%s' "${JCR_RO_PASSWORD}" | skopeo login --authfile "$auth" --username "${JCR_RO_USERNAME}" --password-stdin jcr-prod.woowtech.io
+          printf '%s' "${GHCR_TOKEN}" | skopeo login --authfile "$auth" --username "${GHCR_ACTOR}" --password-stdin ghcr.io
+          echo "REGISTRY_AUTH_FILE=${auth}" >> "$GITHUB_ENV"
+
+      - name: Copy by digest and verify
+        env:
+          CORE_TAG: ${{ inputs.tag }}
+          CORE_DIGEST: ${{ inputs.digest }}
+          CORE_ALIAS_TAG: ${{ inputs.alias_tag }}
+        run: ./.github/scripts/import-core.sh
+
+      - name: Remove registry credentials
+        if: always()
+        run: rm -f "${RUNNER_TEMP}/registry-auth.json"
