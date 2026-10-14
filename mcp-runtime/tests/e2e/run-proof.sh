@@ -182,6 +182,20 @@ s12() {
   docker logs $P-addon 2>&1 | grep -E 'required process mcp' | tail -n 1
 }
 
+s13() {
+  log "Claude.ai connector sequence over the URL secret (server/discover, initialize 2025-11-25, _meta everywhere, unknown request/notification)"
+  probe "$TOKEN" claudeai
+  log "refused tools/call (gateway 0.1.14): HTTP 200 JSON-RPC errors with a reason, no input echo; without a session 403"
+  probe "$TOKEN" refusals
+}
+s14() {
+  log "client handshake while the add-on restarts after an OpenDesign crash (SIGKILL of the daemon): per-second attempts"
+  local od
+  od=$(daemon_pid)
+  docker exec $P-addon kill -KILL "$od"
+  docker exec -e MCP_TOKEN="$TOKEN" -e STARTING_SECONDS=150 $P-client $PY /e2e/mcp_probe.py "http://$ADDON:8081" starting
+}
+
 step 01-startup.txt s01
 TOKEN=$(admin reveal)
 [[ ${#TOKEN} == 43 ]] || { echo "unexpected token shape"; exit 1; }
@@ -196,6 +210,8 @@ step 08-daemon-restart.txt s08
 step 09-claude-code.txt s09
 step 11-mcp-link-browser.txt s11
 step 12-mcp-process-restart.txt s12
+step 13-claudeai-and-refusals.txt s13
+step 14-restart-window.txt s14
 
 patterns=(); for t in "${SEEN[@]}"; do patterns+=(-e "$t"); done
 if grep -rlF "${patterns[@]}" "$EV"; then echo "LEAK: token found in evidence" | tee "$EV/10-leak-check.txt"; exit 1; fi

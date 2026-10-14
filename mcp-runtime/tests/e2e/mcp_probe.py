@@ -9,6 +9,14 @@ checks:
   health    initialize + tools/call health only (Bearer); exit 0 even if the tool reports an error
   status    HTTP status of a Bearer initialize only (token lifecycle checks)
   ready     GET /health/ready
+  claudeai  the real Claude.ai connector sequence over /private_<token>/mcp (UA Claude-User, clientInfo
+            Anthropic/ClaudeAI): server/discover (MCP-Protocol-Version 2026-07-28, params only _meta), initialize
+            2025-11-25 with _meta.traceparent and capabilities.extensions, _meta on every allowed method, unknown
+            request -> 200 JSON-RPC -32601, unknown notification -> 202
+  refusals  0.1.14 refused tools/call -> HTTP 200 JSON-RPC errors with a reason and no input echo (unknown tool,
+            write not granted, invalid arguments); a tools/call without a session stays 403 (Bearer)
+  starting  initialize -> tools/list -> tools/call health in a loop while the daemon (re)starts (Bearer); prints
+            each attempt's HTTP status / JSON-RPC outcome
 Outputs one JSON line per check. The token comes only from MCP_TOKEN and is redacted from all output.
 """
 import json
@@ -92,6 +100,111 @@ def flow(client, url, headers, label):
     session.close()
 
 
+CLAUDE_UA = 'Claude-User'
+META = {'traceparent': '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'}  # W3C example value, not a secret
+MARKER = 'probe-input-marker-' + 'q' * 12  # must never be echoed back in a refusal
+
+
+def rpc_or_status(response):
+    try:
+        return response.status_code, rpc_result(response)
+    except Exception:  # noqa: BLE001 - only the status matters then
+        return response.status_code, None
+
+
+def claudeai(client, base):
+    url = base + '/private_' + TOKEN + '/mcp'
+    session = Session(client, url, {'Origin': 'https://claude.ai', 'User-Agent': CLAUDE_UA})
+    status, reply = rpc_or_status(session.post({'jsonrpc': '2.0', 'id': 1, 'method': 'server/discover',
+                                                'params': {'_meta': META}}, {'MCP-Protocol-Version': '2026-07-28'}))
+    out(check='claudeai', step='server/discover (params only _meta)', status=status, error=(reply or {}).get('error'))
+    response = session.post({'jsonrpc': '2.0', 'id': 2, 'method': 'initialize', 'params': {
+        '_meta': META, 'protocolVersion': '2025-11-25',
+        'capabilities': {'extensions': {'io.modelcontextprotocol/ui': {'mimeTypes': ['text/html;profile=mcp-app']}}},
+        'clientInfo': {'name': 'Anthropic/ClaudeAI', 'version': '1.0.0'}}})
+    status, reply = rpc_or_status(response)
+    result = (reply or {}).get('result') or {}
+    out(check='claudeai', step='initialize 2025-11-25 (_meta.traceparent, capabilities.extensions)', status=status,
+        protocolVersion=result.get('protocolVersion'), serverInfo=result.get('serverInfo'), error=(reply or {}).get('error'))
+    session.headers['mcp-session-id'] = response.headers['mcp-session-id']
+    session.headers['mcp-protocol-version'] = result['protocolVersion']
+    r = session.post({'jsonrpc': '2.0', 'method': 'notifications/initialized', 'params': {'_meta': META}})
+    out(check='claudeai', step='notifications/initialized with _meta', status=r.status_code)
+    r = session.post({'jsonrpc': '2.0', 'method': 'notifications/claudeai/unknown', 'params': {'_meta': META}})
+    out(check='claudeai', step='unknown notification', status=r.status_code)
+    status, reply = rpc_or_status(session.post({'jsonrpc': '2.0', 'id': 3, 'method': 'claudeai/unknown', 'params': {'_meta': META}}))
+    out(check='claudeai', step='unknown request', status=status, error=(reply or {}).get('error'))
+    status, reply = rpc_or_status(session.post({'jsonrpc': '2.0', 'id': 4, 'method': 'tools/list', 'params': {'_meta': META}}))
+    tools = ((reply or {}).get('result') or {}).get('tools', [])
+    out(check='claudeai', step='tools/list with _meta', status=status, count=len(tools))
+    status, reply = rpc_or_status(session.post({'jsonrpc': '2.0', 'id': 5, 'method': 'tools/call', 'params': {
+        '_meta': {**META, 'progressToken': 7}, 'name': 'health', 'arguments': {}}}))
+    result = (reply or {}).get('result') or {}
+    out(check='claudeai', step='tools/call health with _meta', status=status, isError=bool(result.get('isError')),
+        error=(reply or {}).get('error'), ok='"ok": true' in ''.join(i.get('text', '') for i in result.get('content', [])))
+    status, reply = rpc_or_status(session.post({'jsonrpc': '2.0', 'id': 6, 'method': 'ping', 'params': {'_meta': META}}))
+    out(check='claudeai', step='ping with _meta', status=status, result=(reply or {}).get('result'), error=(reply or {}).get('error'))
+    session.close()
+
+
+def refusals(client, base):
+    bearer = {'Authorization': 'Bearer ' + TOKEN}
+    session = Session(client, base + '/mcp', bearer)
+    session.initialize()
+    cases = [
+        ('unknown tool', {'name': 'no_such_tool_' + MARKER, 'arguments': {}}),
+        ('write tool not granted (delete_project)', {'name': 'delete_project', 'arguments': {'project_id': MARKER}}),
+        ('not offered (read_file)', {'name': 'read_file', 'arguments': {'project_id': MARKER, 'path': 'x'}}),
+        ('invalid arguments (get_project without project_id, extra field)', {'name': 'get_project', 'arguments': {'unexpected': MARKER}}),
+        ('invalid argument type (get_project project_id=123)', {'name': 'get_project', 'arguments': {'project_id': 123}}),
+    ]
+    for ident, (case, params) in enumerate(cases, start=10):
+        response = session.post({'jsonrpc': '2.0', 'id': ident, 'method': 'tools/call', 'params': params})
+        status, reply = rpc_or_status(response)
+        error = (reply or {}).get('error') or {}
+        out(check='refusals', case=case, status=status, code=error.get('code'), message=error.get('message'),
+            data=error.get('data'), input_echoed=MARKER in response.text)
+    no_session = Session(client, base + '/mcp', bearer).post({'jsonrpc': '2.0', 'id': 30, 'method': 'tools/call',
+                                                              'params': {'name': 'no_such_tool', 'arguments': {}}})
+    out(check='refusals', case='refused tools/call without a session', status=no_session.status_code)
+    session.close()
+
+
+def starting(client, base, seconds):
+    """Poll a full client handshake while the add-on (re)starts; one JSON line per attempt."""
+    import time
+    bearer = {'Authorization': 'Bearer ' + TOKEN}
+    deadline = time.monotonic() + seconds
+    started = time.monotonic()
+    while time.monotonic() < deadline:
+        at = round(time.monotonic() - started, 1)
+        session = Session(client, base + '/mcp', bearer)
+        try:
+            response = session.post({'jsonrpc': '2.0', 'id': 0, 'method': 'initialize', 'params': {
+                'protocolVersion': PROTOCOL, 'capabilities': {}, 'clientInfo': {'name': 'probe', 'version': '0'}}})
+        except httpx.HTTPError as exc:
+            out(check='starting', t=at, initialize='transport ' + type(exc).__name__)
+            time.sleep(1)
+            continue
+        line = {'t': at, 'initialize': response.status_code}
+        if response.status_code == 200 and 'mcp-session-id' in response.headers:
+            session.headers['mcp-session-id'] = response.headers['mcp-session-id']
+            session.headers['mcp-protocol-version'] = rpc_result(response)['result']['protocolVersion']
+            session.post({'jsonrpc': '2.0', 'method': 'notifications/initialized'})
+            status, reply = rpc_or_status(session.post({'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'}))
+            line['tools/list'] = status
+            status, reply = rpc_or_status(session.post({'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call',
+                                                        'params': {'name': 'health', 'arguments': {}}}))
+            result = (reply or {}).get('result') or {}
+            text = ''.join(i.get('text', '') for i in result.get('content', []))
+            line['health'] = status if reply is None else ('error ' + text[:60] if result.get('isError') else 'ok')
+            session.close()
+        out(check='starting', **line)
+        if line.get('health') == 'ok':
+            return
+        time.sleep(1)
+
+
 def main():
     base, checks = sys.argv[1].rstrip('/'), sys.argv[2:]
     with httpx.Client(timeout=httpx.Timeout(40, connect=5), trust_env=False) as client:
@@ -127,6 +240,12 @@ def main():
             elif check == 'status':
                 r = Session(client, base + '/mcp', bearer).post(init)
                 out(check='status', case='Bearer initialize', status=r.status_code)
+            elif check == 'claudeai':
+                claudeai(client, base)
+            elif check == 'refusals':
+                refusals(client, base)
+            elif check == 'starting':
+                starting(client, base, int(os.environ.get('STARTING_SECONDS', '120')))
             elif check == 'ready':
                 r = client.get(base + '/health/ready')
                 out(check='ready', status=r.status_code, body=r.text[:200])
