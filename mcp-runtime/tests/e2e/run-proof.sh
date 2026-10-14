@@ -113,7 +113,8 @@ s06() { docker exec -i $P-addon sh /dev/stdin < "$E2E/container_probe.sh"; }
 s07() {
   log "OpenDesign daemon paused (SIGSTOP): MCP stays up, the tool reports a backend error"
   local od
-  od=$(docker exec $P-addon pgrep -f headless-entry.mjs | head -1)
+  od=$(daemon_pid)
+  echo "daemon: $(docker exec $P-addon cat /proc/$od/cmdline | tr '\0' ' ')"
   docker exec $P-addon kill -STOP "$od"
   probe "$TOKEN" health
   sleep 20
@@ -122,6 +123,13 @@ s07() {
   log "daemon resumed (SIGCONT)"
   wait_ready 60
   probe "$TOKEN" health
+}
+# The OpenDesign node process itself, not the omnigent-host kit launcher (sh) that wraps it.
+daemon_pid() {
+  local pid
+  pid=$(docker exec $P-addon pgrep -f '^/usr/local/bin/node /opt/ha-opendesign/headless-entry.mjs' | head -1)
+  [[ -n $pid ]] || { echo "OpenDesign daemon process not found" >&2; return 1; }
+  echo "$pid"
 }
 restarted_within() {  # wait until the container's StartedAt changes; print the seconds it took
   local before=$1 limit=$2 start=$SECONDS
@@ -135,7 +143,7 @@ s08() {
   log "OpenDesign daemon crashes (SIGKILL): launcher stops all four processes, container restarts, same token works"
   local od before
   before=$(docker inspect -f '{{.State.StartedAt}}' $P-addon)
-  od=$(docker exec $P-addon pgrep -f headless-entry.mjs | head -1)
+  od=$(daemon_pid)
   docker exec $P-addon kill -KILL "$od"
   restarted_within "$before" 180
   wait_ready 300
@@ -143,7 +151,7 @@ s08() {
   docker logs $P-addon 2>&1 | grep -E '^\[ha-opendesign\]|ha-opendesign-mcp|required process' | tail -n 4
   log "OpenDesign daemon stopped gracefully (SIGTERM): observed shutdown/restart time (OpenDesign-side behaviour)"
   before=$(docker inspect -f '{{.State.StartedAt}}' $P-addon)
-  od=$(docker exec $P-addon pgrep -f headless-entry.mjs | head -1)
+  od=$(daemon_pid)
   docker exec $P-addon kill -TERM "$od"
   probe "$TOKEN" status
   restarted_within "$before" 240
@@ -162,6 +170,18 @@ s11() {
   docker exec -e ADDON=$ADDON -e FAKE_ADMIN_ID="$FAKE_ADMIN_ID" $P-supervisor node /opt/ha-opendesign/mcp_link_browser.mjs
 }
 
+s12() {
+  log "built-in MCP management process killed (SIGKILL): the whole add-on restarts (owner decision), same token works"
+  local mgmt before
+  before=$(docker inspect -f '{{.State.StartedAt}}' $P-addon)
+  mgmt=$(docker exec $P-addon pgrep -f 'ha_opendesign_mcp/management.py' | head -1)
+  docker exec $P-addon kill -KILL "$mgmt"
+  restarted_within "$before" 180
+  wait_ready 300
+  probe "$TOKEN" status
+  docker logs $P-addon 2>&1 | grep -E 'required process mcp' | tail -n 1
+}
+
 step 01-startup.txt s01
 TOKEN=$(admin reveal)
 [[ ${#TOKEN} == 43 ]] || { echo "unexpected token shape"; exit 1; }
@@ -175,6 +195,7 @@ step 07-daemon-pause.txt s07
 step 08-daemon-restart.txt s08
 step 09-claude-code.txt s09
 step 11-mcp-link-browser.txt s11
+step 12-mcp-process-restart.txt s12
 
 patterns=(); for t in "${SEEN[@]}"; do patterns+=(-e "$t"); done
 if grep -rlF "${patterns[@]}" "$EV"; then echo "LEAK: token found in evidence" | tee "$EV/10-leak-check.txt"; exit 1; fi
