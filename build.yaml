@@ -1,11 +1,10 @@
 # Base = the shared WoowTech OpenDesign core image (see Dockerfile), published
 # as ghcr.io/woowtech/open-design-core. Supervisor's local builder rejects OCI
 # digest syntax here and silently falls back to its default base image, so this
-# development path needs a tag: the tag below is a deliberate, unpullable
-# placeholder until the core publishes one. CI/release builds and the
-# Dockerfile default pin the core by digest. amd64 only.
+# development path needs a tag: the core's immutable GHCR tag (same image as
+# the digest in Dockerfile / CI, which pin the core by digest). amd64 only.
 build_from:
-  amd64: ghcr.io/woowtech/open-design-core:PLACEHOLDER-set-core-tag
+  amd64: ghcr.io/woowtech/open-design-core:20261014.1921
 labels:
   org.opencontainers.image.title: Woow HA OpenDesign
   org.opencontainers.image.description: OpenDesign 0.24.1 (WoowTech core) for Home Assistant Ingress

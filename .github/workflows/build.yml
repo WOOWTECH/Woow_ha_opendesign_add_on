@@ -12,9 +12,8 @@ permissions:
 
 env:
   # Shared WoowTech OpenDesign core image (PaaS open-design image), published as
-  # the public ghcr.io/woowtech/open-design-core. All-zero placeholder digest
-  # until it is published; replace it with the real digest (same as Dockerfile).
-  CORE_IMAGE: ghcr.io/woowtech/open-design-core:PLACEHOLDER-pin-core-digest@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  # the public ghcr.io/woowtech/open-design-core, pinned by digest (same as Dockerfile).
+  CORE_IMAGE: ghcr.io/woowtech/open-design-core:20261014.1921@sha256:bfec7cc6c96b559506f33dce9296d9c2e02e9acbb0fe543ad434ea66370baf35
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

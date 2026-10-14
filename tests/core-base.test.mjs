@@ -10,13 +10,13 @@ const [dockerfile, smoke, workflow, launcher, build] = await Promise.all([
   readFile(new URL('rootfs/usr/local/bin/ha-opendesign', root), 'utf8'),
   readFile(new URL('build.yaml', root), 'utf8'),
 ]);
-const corePlaceholder = 'ghcr.io/woowtech/open-design-core:PLACEHOLDER-pin-core-digest@sha256:0000000000000000000000000000000000000000000000000000000000000000';
+const coreImage = 'ghcr.io/woowtech/open-design-core:20261014.1921@sha256:bfec7cc6c96b559506f33dce9296d9c2e02e9acbb0fe543ad434ea66370baf35';
 
 test('the add-on derives from the WoowTech core image, never upstream OpenDesign', () => {
-  assert.match(dockerfile, new RegExp(`^ARG BUILD_FROM=${corePlaceholder.replace(/[.]/g, '\\.')}$`, 'm'));
+  assert.match(dockerfile, new RegExp(`^ARG BUILD_FROM=${coreImage.replace(/[.]/g, '\\.')}$`, 'm'));
   assert.match(dockerfile, /^FROM \$\{BUILD_FROM\}$/m);
   for (const text of [dockerfile, workflow, build]) assert.doesNotMatch(text, /nexu-io\/od/);
-  assert.match(workflow, /CORE_IMAGE: ghcr\.io\/woowtech\/open-design-core:PLACEHOLDER-pin-core-digest@sha256:0{64}$/m);
+  assert.ok(workflow.split('\n').includes(`  CORE_IMAGE: ${coreImage}`), 'CI must pin the same core digest as the Dockerfile');
   assert.match(workflow, /BUILD_FROM=\$\{\{ env\.CORE_IMAGE \}\}/);
 });
 

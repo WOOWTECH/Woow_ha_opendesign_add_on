@@ -8,11 +8,10 @@
 # built-in Woow OpenDesign MCP server (mcp-runtime/).
 #
 # The core is published as the public ghcr.io/woowtech/open-design-core,
-# copied from the PaaS registry by digest. The default below is a deliberate,
-# unpullable PLACEHOLDER (all-zero digest) until that digest exists; replace it
-# with the real digest. Builds before then must pass
-# --build-arg BUILD_FROM=<core image>; e.g. on the builder VM: od-p1-candidate:local.
-ARG BUILD_FROM=ghcr.io/woowtech/open-design-core:PLACEHOLDER-pin-core-digest@sha256:0000000000000000000000000000000000000000000000000000000000000000
+# copied from the PaaS registry by digest (paas-odoo-ci #325, approval #328:
+# OpenDesign 0.24.1 from fork woow-od-v0.24.1-w2.1 = ba3a448). Bump = change the
+# tag and digest together here, in .github/workflows/build.yml and build.yaml.
+ARG BUILD_FROM=ghcr.io/woowtech/open-design-core:20261014.1921@sha256:bfec7cc6c96b559506f33dce9296d9c2e02e9acbb0fe543ad434ea66370baf35
 
 # --- Built-in Woow OpenDesign MCP server: admin UI assets (mcp-runtime/, see mcp-runtime/README.md) ---
 # Built with the core image's own Node/npm from the vendored, lock-pinned UI sources; only dist/ is kept.
