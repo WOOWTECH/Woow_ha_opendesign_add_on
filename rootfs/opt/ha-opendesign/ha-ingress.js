@@ -237,8 +237,27 @@
       if (element.tagName === 'STYLE') element.textContent = rewriteCss(element.textContent);
     }
   };
-  new MutationObserver((records) => records.forEach((record) => record.addedNodes.forEach(scopeTree)))
-    .observe(document.documentElement, { childList: true, subtree: true });
+  // React applies inline style objects through CSSStyleDeclaration properties
+  // (element.style.maskImage = 'url("/agent-icons/x.svg")'), which bypass the
+  // setAttribute/setProperty wrappers. OpenDesign 0.24.1 renders agent and model
+  // icons that way and swaps them on existing elements, so style attribute
+  // changes are re-scoped too. A rewrite is idempotent (already-scoped URLs are
+  // left alone), so the observer's own write does not loop.
+  const scopeStyleAttribute = (element) => {
+    if (!(element instanceof Element) || !element.hasAttribute('style')) return;
+    const value = element.getAttribute('style');
+    const scoped = rewriteCss(value);
+    if (scoped !== value) originalSetAttribute.call(element, 'style', scoped);
+  };
+  new MutationObserver((records) => records.forEach((record) => {
+    if (record.type === 'attributes') scopeStyleAttribute(record.target);
+    else record.addedNodes.forEach(scopeTree);
+  })).observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['style'],
+  });
 
   // A service worker scoped to '/' would control Home Assistant itself.
   if (navigator.serviceWorker?.register) {

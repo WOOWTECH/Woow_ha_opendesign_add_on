@@ -65,9 +65,10 @@ function runIngressShim(initialPath) {
   class XMLHttpRequest { open() {} }
   class CSSStyleDeclaration { setProperty() {} }
   class CSSStyleSheet { insertRule() {} }
+  const mutationObservers = [];
   class MutationObserver {
-    constructor() {}
-    observe() {}
+    constructor(callback) { this.callback = callback; mutationObservers.push(this); }
+    observe(target, options) { this.options = options; }
   }
   const iframeSetterCalls = [];
   class HTMLIFrameElement extends Element {}
@@ -106,7 +107,7 @@ function runIngressShim(initialPath) {
     URL,
     Request,
   });
-  return { history, historyCalls, location, replaceCalls, Element, HTMLIFrameElement, originalSetAttributeCalls, iframeSetterCalls };
+  return { history, historyCalls, location, replaceCalls, Element, HTMLIFrameElement, originalSetAttributeCalls, iframeSetterCalls, mutationObservers };
 }
 
 test('representative initial HTML rewrite matches the fixture', async () => {
@@ -179,6 +180,13 @@ test('nginx validates the ingress prefix and preserves streaming upgrades', () =
   assert.ok(nginx.indexOf('location ~ ^/api/projects/') < nginx.indexOf('location / {'), 'download bypass must precede the filtered shell location');
 });
 
+test('nginx keeps OpenDesign 0.24.1 template-literal icon URLs and redirects on the ingress prefix', () => {
+  assert.ok(nginx.includes("sub_filter '`/agent-icons/' '`$safe_ingress_path/agent-icons/';"));
+  assert.ok(nginx.includes("sub_filter '`/model-icons/' '`$safe_ingress_path/model-icons/';"));
+  assert.match(nginx, /^\s*absolute_redirect off;$/m, 'redirect Locations must stay relative to the HA origin');
+  assert.match(nginx, /location = \/_woow\/support \{\s*return 302 https:\/\/aiot\.woowtech\.io\/woow;/);
+});
+
 test('nginx exposes ttyd only through the ingress-prefixed terminal proxy', () => {
   assert.match(nginx, /location \^~ \/terminal\//);
   assert.match(nginx, /proxy_pass http:\/\/127\.0\.0\.1:7681;/);
@@ -221,6 +229,26 @@ test('repeated iframe.src property assignment with the same logical URL commits 
 
   iframe.src = '/api/projects/project-123/raw/other.html';
   assert.equal(iframeSetterCalls.length, 2);
+});
+
+test('inline style URL updates on existing elements keep the ingress prefix', () => {
+  // OpenDesign 0.24.1 renders agent icons as React inline styles
+  // (style.maskImage = 'url("/agent-icons/x.svg")'); updates reach the DOM as
+  // style attribute mutations, not through setAttribute or setProperty.
+  const { Element, originalSetAttributeCalls, mutationObservers } = runIngressShim(`${prefix}/`);
+  assert.equal(mutationObservers.length, 1);
+  const [observer] = mutationObservers;
+  assert.equal(observer.options.attributes, true);
+  assert.deepEqual([...observer.options.attributeFilter], ['style']);
+  const icon = new Element();
+  icon._attrs.set('style', 'mask-image: url("/agent-icons/opencode.svg"); width: 36px');
+  originalSetAttributeCalls.length = 0;
+  observer.callback([{ type: 'attributes', target: icon, addedNodes: [] }]);
+  assert.equal(icon.getAttribute('style'), `mask-image: url("${prefix}/agent-icons/opencode.svg"); width: 36px`);
+  assert.equal(originalSetAttributeCalls.length, 1);
+  // The observer sees its own write; an already-scoped value must not loop.
+  observer.callback([{ type: 'attributes', target: icon, addedNodes: [] }]);
+  assert.equal(originalSetAttributeCalls.length, 1);
 });
 
 test('early shim covers root-relative streaming, navigation, and dynamic URLs', () => {
