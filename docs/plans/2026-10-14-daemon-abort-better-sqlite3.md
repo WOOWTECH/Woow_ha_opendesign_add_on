@@ -39,7 +39,8 @@ docker run --rm --user 1001:1001 --entrypoint /sbin/tini \
 # node v24.21.0, better-sqlite3@12.10.0 / prepared 0 / Assertion failed: (env) != nullptr / exit 134
 ```
 
-Builder VM, 2026-10-14: 4 of 4 runs aborted before 200 000 statements (exit 134 under tini, 139 as PID 1).
+Builder VM, 2026-10-14: 4 of 4 runs aborted (exit 134 under tini, 139 with node as PID 1); the fully logged run
+aborted before its 200 000th statement.
 The same script against `better-sqlite3@13.0.3` (Node-API `Napi::ObjectWrap`, installed into a throwaway
 directory of the same image) survived 2 000 000 statements.
 

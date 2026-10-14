@@ -9,7 +9,7 @@ bash -n mcp-runtime/tests/e2e/run-proof.sh
 python3 tests/workflow-policy.test.py
 python3 tests/sign-in-hint.test.py
 
-for file in rootfs/opt/ha-opendesign/*.js rootfs/opt/ha-opendesign/*.mjs tests/*.mjs mcp-runtime/tests/e2e/*.mjs; do
+for file in rootfs/opt/ha-opendesign/*.js rootfs/opt/ha-opendesign/*.mjs tests/*.mjs mcp-runtime/tests/e2e/*.mjs docs/repro/*.cjs; do
   node --check "$file"
 done
 
