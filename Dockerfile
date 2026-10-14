@@ -97,6 +97,13 @@ RUN set -eu; \
     fc-list | grep -qi 'Noto Sans CJK'; \
     echo "core contract OK: OpenDesign ${CORE_OPENDESIGN_VERSION}, claude ${CORE_CLAUDE_CODE_VERSION}, codex ${CORE_CODEX_VERSION}, pi ${CORE_PI_VERSION}, opencode ${CORE_OPENCODE_VERSION}, omnigent ${CORE_OMNIGENT_VERSION}"
 
+# HA wording for the core's white-label "{agent} is not signed in" hint: the
+# add-on's CLI Terminal instead of the PaaS /console/ path. The patch fails the
+# build when the core text it replaces is missing or ambiguous.
+COPY ha-patches/sign-in-hint.py /tmp/ha-patches/sign-in-hint.py
+RUN python3 /tmp/ha-patches/sign-in-hint.py /app/apps/web/out \
+    && rm -rf /tmp/ha-patches
+
 COPY rootfs/ /
 # omnigent-host kit: byte-identical copies of woow-paas-charts
 # shared/omnigent-host (KIT.sha256). The chart mounts these from a ConfigMap;

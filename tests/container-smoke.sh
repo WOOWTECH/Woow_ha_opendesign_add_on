@@ -269,10 +269,17 @@ docker exec "$container" sh -ceu '
   cd /app/apps/web/out
   grep -rl "請審查並潤色現有動效" _next/static/chunks | head -n1
   grep -rl "_woow/support" _next/static/chunks | head -n1
+  grep -rlF "「CLI Terminal」開啟終端機登入 {agent}" _next/static/chunks | head -n1
+  # HA wording (ha-patches/sign-in-hint.py): no PaaS /console/ hint is left.
+  ! { grep -rlF "/console/" _next/static/chunks | grep -v "[.]map\$"; }
 ' >"$tmp/patched-chunks.txt"
-test "$(wc -l <"$tmp/patched-chunks.txt")" = 2
+test "$(wc -l <"$tmp/patched-chunks.txt")" = 3
 zh_chunk=$(sed -n 1p "$tmp/patched-chunks.txt")
 support_chunk=$(sed -n 2p "$tmp/patched-chunks.txt")
+sign_in_chunk=$(sed -n 3p "$tmp/patched-chunks.txt")
+curl -fsS -H "X-Ingress-Path: $ingress_prefix" -o "$tmp/sign-in-chunk.js" "http://127.0.0.1:${port}/$sign_in_chunk"
+grep -Fq 'Sign in to {agent} in the CLI Terminal' "$tmp/sign-in-chunk.js"
+grep -Fq '請點 OpenDesign 頁面右下角的「CLI Terminal」' "$tmp/sign-in-chunk.js"
 curl -fsS -H "X-Ingress-Path: $ingress_prefix" -o "$tmp/zh-chunk.js" "http://127.0.0.1:${port}/$zh_chunk"
 grep -Fq '請審查並潤色現有動效' "$tmp/zh-chunk.js"
 curl -fsS -H "X-Ingress-Path: $ingress_prefix" -o "$tmp/support-chunk.js" "http://127.0.0.1:${port}/$support_chunk"

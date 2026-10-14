@@ -77,6 +77,7 @@ check("su-exec ha-ingress:ha-ingress /usr/sbin/nginx" in launcher, "launcher mus
 check("no_supervisor_env=(/usr/bin/env -u SUPERVISOR_TOKEN -u HASSIO_TOKEN)" in launcher, "children must not inherit Supervisor credentials")
 check(len(re.findall(r'^start_child \w+ \\\n  "\$\{no_supervisor_env\[@\]\}" ', launcher, re.M)) == len(re.findall(r"^start_child ", launcher, re.M)) == 4, "every supervised child must start without Supervisor credentials")
 check('"${no_supervisor_env[@]}" /opt/woow/bin/ha-opendesign-mcp' in launcher, "launcher must start the built-in MCP server")
+check("RUN python3 /tmp/ha-patches/sign-in-hint.py /app/apps/web/out" in dockerfile, "HA sign-in hint patch must run on the core web build")
 check("sh /tmp/mcp-runtime/install.sh" in dockerfile and "FROM ${BUILD_FROM} AS woow-mcp-ui" in dockerfile, "built-in MCP install missing")
 check("proxy_pass http://unix:/run/ha-opendesign-mcp/admin.sock:/;" in nginx and nginx.count("allow 172.30.32.2;") == 2 and nginx.count("deny all;") == 2, "MCP admin must be Ingress-peer only over the Unix socket")
 check("npm" not in launcher.lower(), "launcher must not download/install CLI packages at startup")

@@ -10,6 +10,7 @@
 - OpenDesign now stops on TERM: 0.24.1's `shutdown()` no longer closes the HTTP server, so the entry closes it and exits instead of waiting for the KILL deadline.
 - The `open-design` passwd home is the persistent `/data/opendesign/home`, so tools that ignore `$HOME` (OpenCode's cache, data and state) persist too. Missing agent CLI homes (`.claude`, `.codex`, `.config`, `.pi/agent`) are created at startup; existing entries are left alone.
 - The launcher supervises a list of named required processes, which makes adding one a single `start_child` line, and names the process that exited.
+- The white-label "agent is not signed in" message points to the add-on's **CLI Terminal** (zh-TW, zh-CN and English) instead of the PaaS `/console/` path and service settings (`ha-patches/sign-in-hint.py`, which fails the build when the core text changes).
 - **Built-in MCP server** (replaces the separate *Woow OpenDesign MCP Server* add-on): the pinned Woow MCP gateway and OpenDesign tools (`mcp-runtime/`, vendored from `WOOWTECH/Woow_ha_mcp_addons`, hashes in `VENDOR.json`) run as a fourth required process under their own UID, always on, with the add-on's own OpenDesign as the fixed backend. LAN MCP on container port `8081` (Bearer, or `/private_<token>/mcp` for Claude.ai; not mapped by default); administration at Ingress `/mcp-admin/`. nginx now runs as its own UID `ha-ingress`, and no child process inherits the Supervisor token.
 
 ## 0.1.10
