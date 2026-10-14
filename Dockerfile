@@ -4,7 +4,8 @@
 # omnigent CLI with its SDK patch, bundled woowtech-brand skill and woow-omnigent
 # plugin, no brainstorming skill). This file adds only the Home Assistant shell:
 # nginx Ingress adaptation, the ttyd CLI Terminal, the root PID-1 launcher, the
-# /data layout, the headless export renderer and the omnigent-host kit.
+# /data layout, the headless export renderer, the omnigent-host kit and the
+# built-in Woow OpenDesign MCP server (mcp-runtime/).
 #
 # The core is published as the public ghcr.io/woowtech/open-design-core,
 # copied from the PaaS registry by digest. The default below is a deliberate,
@@ -12,6 +13,18 @@
 # with the real digest. Builds before then must pass
 # --build-arg BUILD_FROM=<core image>; e.g. on the builder VM: od-p1-candidate:local.
 ARG BUILD_FROM=ghcr.io/woowtech/open-design-core:PLACEHOLDER-pin-core-digest@sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+# --- Built-in Woow OpenDesign MCP server: admin UI assets (mcp-runtime/, see mcp-runtime/README.md) ---
+# Built with the core image's own Node/npm from the vendored, lock-pinned UI sources; only dist/ is kept.
+# --include=dev because the core sets NODE_ENV=production.
+FROM ${BUILD_FROM} AS woow-mcp-ui
+USER root
+WORKDIR /ui
+COPY mcp-runtime/vendor/packages/mcp-admin-ui/ ./
+RUN /usr/local/bin/npm ci --include=dev --ignore-scripts --no-audit --no-fund \
+    && /usr/local/bin/npm run build \
+    && test -f dist/index.html
+
 FROM ${BUILD_FROM}
 
 # Versions the core image must provide; the contract RUN below fails the build
@@ -114,6 +127,13 @@ RUN set -eu; \
       /opt/ha-opendesign/headless-entry.mjs \
       /opt/ha-opendesign/headless-renderer.mjs; \
     chown -R open-design:open-design /opt/ha-opendesign
+
+# --- Built-in Woow OpenDesign MCP server (mcp-runtime/, see mcp-runtime/README.md) ---
+# Pinned Woow MCP gateway + OpenDesign tools (mcp-runtime/VENDOR.json), hash-pinned wheels, users mcp (10001)
+# and ha-ingress (1002, nginx). Code is root-owned and read-only; state lives in /data/mcp (uid 10001, 0700).
+COPY --from=woow-mcp-ui /ui/dist /opt/woow/packages/mcp-admin-ui/dist
+COPY mcp-runtime/ /tmp/mcp-runtime/
+RUN sh /tmp/mcp-runtime/install.sh && rm -rf /tmp/mcp-runtime
 
 # amd64 only: the core image is built for linux/amd64.
 ARG BUILD_ARCH=amd64

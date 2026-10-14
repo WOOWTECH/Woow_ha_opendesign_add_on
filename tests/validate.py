@@ -34,7 +34,8 @@ check(config.get("arch") == ["amd64"], "the core image is amd64-only; only amd64
 check(config.get("ingress") is True, "ingress must be enabled")
 check(config.get("ingress_stream") is True, "ingress_stream must be enabled")
 check(config.get("ingress_port") == 8099, "ingress port must be 8099")
-check("ports" not in config and "ports_description" not in config and "webui" not in config, "LAN port publication is forbidden")
+check(config.get("ports") == {"8081/tcp": None} and set(config.get("ports_description", {})) == {"8081/tcp"} and "webui" not in config, "only the unmapped built-in MCP port 8081 may be declared")
+check(not config.get("homeassistant_api") and not config.get("hassio_api") and not config.get("full_access"), "built-in MCP administration relies on Ingress login; no HA/Supervisor API access")
 check(config.get("backup") == "cold", "cold backup is required")
 check(config.get("watchdog") == "http://[HOST]:[PORT:8099]/api/health", "watchdog must use ingress health route")
 check(config.get("options") == {} and config.get("schema") == {}, "add-on options/schema must stay empty (no provider secrets)")
@@ -71,7 +72,13 @@ check("EXPOSE" not in dockerfile, "Dockerfile must not expose a port")
 check("OD_DATA_DIR=/data/opendesign" in dockerfile, "OD_DATA_DIR persistence is missing")
 check("OD_BIND_HOST=127.0.0.1" in dockerfile, "Dockerfile must set loopback bind")
 check(re.search(r"^USER root$", dockerfile, re.M), "PID 1 must start as root to prepare HA's root-owned /data mount")
-check("su-exec open-design:open-design" in launcher, "launcher must drop OpenDesign and nginx to UID/GID 1001")
+check("su-exec open-design:open-design" in launcher, "launcher must drop OpenDesign and ttyd to UID/GID 1001")
+check("su-exec ha-ingress:ha-ingress /usr/sbin/nginx" in launcher, "launcher must run nginx as its own ha-ingress UID")
+check("no_supervisor_env=(/usr/bin/env -u SUPERVISOR_TOKEN -u HASSIO_TOKEN)" in launcher, "children must not inherit Supervisor credentials")
+check(len(re.findall(r'^start_child \w+ \\\n  "\$\{no_supervisor_env\[@\]\}" ', launcher, re.M)) == len(re.findall(r"^start_child ", launcher, re.M)) == 4, "every supervised child must start without Supervisor credentials")
+check('"${no_supervisor_env[@]}" /opt/woow/bin/ha-opendesign-mcp' in launcher, "launcher must start the built-in MCP server")
+check("sh /tmp/mcp-runtime/install.sh" in dockerfile and "FROM ${BUILD_FROM} AS woow-mcp-ui" in dockerfile, "built-in MCP install missing")
+check("proxy_pass http://unix:/run/ha-opendesign-mcp/admin.sock:/;" in nginx and nginx.count("allow 172.30.32.2;") == 2 and nginx.count("deny all;") == 2, "MCP admin must be Ingress-peer only over the Unix socket")
 check("npm" not in launcher.lower(), "launcher must not download/install CLI packages at startup")
 check("shared-agents.mjs" not in launcher, "OpenDesign-native plugin/skill registries must not be replaced by startup symlinks")
 for setting in ["HA_OPENDESIGN_HOME=", "CLAUDE_CONFIG_DIR=", "CODEX_HOME=", "PI_CODING_AGENT_DIR=", "XDG_CONFIG_HOME="]:
@@ -119,7 +126,7 @@ for removed_path in [
     check(not (ROOT / removed_path).exists(), f"withdrawn persistent BYOK component remains: {removed_path}")
 check("ha-byok" not in nginx and "127.0.0.1:7457" not in nginx, "nginx must not expose the withdrawn profile sidecar")
 check('wait -n -p exited_pid "${child_pids[@]}"' in launcher and "byok_pid" not in launcher, "launcher must supervise every started child")
-for child in ["start_child opendesign", "start_child nginx", "start_child ttyd"]:
+for child in ["start_child opendesign", "start_child nginx", "start_child ttyd", "start_child mcp"]:
     check(child in launcher, f"launcher must supervise {child.split()[-1]}")
 check('su-exec open-design:open-design /bin/sh "$OMNIGENT_KIT/omnigent-host-launch" --' in launcher, "OpenDesign must start through the omnigent-host kit launcher")
 for setting in ["OG_HOST_ENABLED=1", "OG_BIN=/usr/local/bin/omnigent", 'OG_CONFIG_HOME="$HOME/.omnigent"', 'OG_WORKSPACE="$HOME/studio"', "OMNIGENT_ANALYTICS=0", 'OG_UNSET_ENV="OD_API_TOKEN"']:

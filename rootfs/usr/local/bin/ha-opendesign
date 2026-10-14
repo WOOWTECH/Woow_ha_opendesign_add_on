@@ -5,9 +5,10 @@ readonly DATA_DIR=/data/opendesign
 readonly NGINX_TMP=/tmp/ha-opendesign-nginx
 readonly OMNIGENT_KIT=/etc/omnigent-host
 readonly SHUTDOWN_GRACE_SECONDS=5
-# Supervised children. Every process started with start_child is required: when
-# any one exits, the launcher stops the others and exits so Supervisor restarts
-# the complete set. Add a process with one more start_child call below.
+# Supervised children (OpenDesign with its omnigent-host kit, nginx, ttyd and
+# the built-in MCP server). Every process started with start_child is required:
+# when any one exits, the launcher stops the others and exits so Supervisor
+# restarts the complete set. Add a process with one more start_child call below.
 child_pids=()
 child_names=()
 stopping=0
@@ -73,7 +74,7 @@ child_name() {
 }
 
 prepare_owned_dir() {
-  local dir=$1
+  local dir=$1 owner=${2:-open-design:open-design}
   if [[ -L "$dir" ]]; then
     echo "[ha-opendesign] refusing symbolic-link runtime directory: $dir" >&2
     exit 78
@@ -93,7 +94,7 @@ prepare_owned_dir() {
     exit 78
   fi
   # -h/--no-dereference prevents a late symlink swap from changing its target.
-  chown -h open-design:open-design "$dir"
+  chown -h "$owner" "$dir"
 }
 
 remove_obsolete_credentials() {
@@ -128,15 +129,15 @@ owned_dirs=(
   "$DATA_DIR/shared/workspaces"
   "$DATA_DIR/export-render"
   "$DATA_DIR/export-pdf"
-  "$NGINX_TMP"
-  "$NGINX_TMP/client"
-  "$NGINX_TMP/proxy"
-  "$NGINX_TMP/fastcgi"
-  "$NGINX_TMP/uwsgi"
-  "$NGINX_TMP/scgi"
 )
 for dir in "${owned_dirs[@]}"; do
   prepare_owned_dir "$dir"
+done
+# nginx runs as its own UID (ha-ingress): besides the built-in MCP server it is
+# the only process that may open the MCP administration socket, which
+# OpenDesign, its agents and the ttyd shell (UID 1001) cannot.
+for dir in "$NGINX_TMP" "$NGINX_TMP/client" "$NGINX_TMP/proxy" "$NGINX_TMP/fastcgi" "$NGINX_TMP/uwsgi" "$NGINX_TMP/scgi"; do
+  prepare_owned_dir "$dir" ha-ingress:ha-ingress
 done
 for dir in "$DATA_DIR" "$DATA_DIR/home" "$DATA_DIR/export-render" "$DATA_DIR/export-pdf"; do
   [[ ! -L "$dir" && -d "$dir" ]] || {
@@ -200,18 +201,29 @@ export OMNIGENT_HOST_NO_OPEN=1
 export OG_STOP_GRACE_SECONDS=2
 export OG_LAUNCH_STOP_SECONDS=3
 
+# Supervisor credentials stay with this root launcher. No child needs them:
+# OpenDesign, its agents, nginx, the CLI Terminal shell and the built-in MCP
+# server (its administration relies on the HA Ingress login) all start without.
+no_supervisor_env=(/usr/bin/env -u SUPERVISOR_TOKEN -u HASSIO_TOKEN)
+
 start_child opendesign \
-  su-exec open-design:open-design /bin/sh "$OMNIGENT_KIT/omnigent-host-launch" -- \
+  "${no_supervisor_env[@]}" su-exec open-design:open-design /bin/sh "$OMNIGENT_KIT/omnigent-host-launch" -- \
   /usr/local/bin/node /opt/ha-opendesign/headless-entry.mjs
 # `-e stderr` uses the inherited descriptor directly; reopening /dev/stderr is
-# denied when HA's root PID 1 drops to UID 1001 under its container procfs.
+# denied when HA's root PID 1 drops to an unprivileged UID under its procfs.
 start_child nginx \
-  su-exec open-design:open-design /usr/sbin/nginx -e stderr -c /etc/nginx/nginx.conf
+  "${no_supervisor_env[@]}" su-exec ha-ingress:ha-ingress /usr/sbin/nginx -e stderr -c /etc/nginx/nginx.conf
 start_child ttyd \
-  su-exec open-design:open-design /usr/bin/ttyd \
+  "${no_supervisor_env[@]}" su-exec open-design:open-design /usr/bin/ttyd \
   --port 7681 --interface 127.0.0.1 --base-path /terminal \
   --writable --check-origin --max-clients 1 \
   --cwd "$HOME" /bin/bash --login
+# Built-in MCP server: starts as root only to own /data/mcp and
+# /run/ha-opendesign-mcp, then drops itself to UID 10001 (mcp). LAN MCP on
+# 0.0.0.0:8081 (Bearer or /private_<token>/mcp), administration via Ingress
+# /mcp-admin/. It is always on and, like every child, required.
+start_child mcp \
+  "${no_supervisor_env[@]}" /opt/woow/bin/ha-opendesign-mcp
 
 exited_pid=''
 set +e

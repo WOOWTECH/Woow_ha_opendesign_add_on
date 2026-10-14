@@ -68,9 +68,9 @@ echo reaped
   assert.match(result.stderr, /exceeded 1s grace; sending KILL/);
 });
 
-test('launcher supervises OpenDesign, nginx, and the login TTY as one unit', () => {
+test('launcher supervises OpenDesign, nginx, the login TTY and the built-in MCP server as one unit', () => {
   assert.doesNotMatch(launcher, /byok_pid|ha-byok-store|ha-byok-profiles/);
-  for (const name of ['opendesign', 'nginx', 'ttyd']) assert.match(launcher, new RegExp(`^start_child ${name} \\\\$`, 'm'));
+  for (const name of ['opendesign', 'nginx', 'ttyd', 'mcp']) assert.match(launcher, new RegExp(`^start_child ${name} \\\\$`, 'm'));
   assert.match(launcher, /wait -n -p exited_pid "\$\{child_pids\[@\]\}"/);
   const shutdown = launcher.slice(launcher.indexOf('terminate_children() {'), launcher.indexOf('\n}\n\ntrap terminate_children') + 2);
   assert.match(shutdown, /for pid in "\$\{child_pids\[@\]\}"/);
@@ -104,7 +104,7 @@ ${launcher.slice(superviseStart)}
 });
 
 test('OpenDesign starts through the omnigent-host kit launcher with the HA contract', () => {
-  assert.match(launcher, /start_child opendesign \\\n  su-exec open-design:open-design \/bin\/sh "\$OMNIGENT_KIT\/omnigent-host-launch" -- \\\n  \/usr\/local\/bin\/node \/opt\/ha-opendesign\/headless-entry\.mjs/);
+  assert.match(launcher, /start_child opendesign \\\n  "\$\{no_supervisor_env\[@\]\}" su-exec open-design:open-design \/bin\/sh "\$OMNIGENT_KIT\/omnigent-host-launch" -- \\\n  \/usr\/local\/bin\/node \/opt\/ha-opendesign\/headless-entry\.mjs/);
   assert.match(launcher, /readonly OMNIGENT_KIT=\/etc\/omnigent-host/);
   for (const setting of [
     'OG_HOST_ENABLED=1',
@@ -133,7 +133,7 @@ test('OpenDesign starts through the omnigent-host kit launcher with the HA contr
 
 test('launcher runs a loopback-only writable login TTY under the OpenDesign UID', () => {
   assert.match(launcher, /\/usr\/bin\/ttyd[\s\S]*--interface 127\.0\.0\.1[\s\S]*--base-path \/terminal[\s\S]*--writable[\s\S]*--cwd "\$HOME" \/bin\/bash --login/);
-  assert.match(launcher, /start_child ttyd \\\n  su-exec open-design:open-design \/usr\/bin\/ttyd/);
+  assert.match(launcher, /start_child ttyd \\\n  "\$\{no_supervisor_env\[@\]\}" su-exec open-design:open-design \/usr\/bin\/ttyd/);
   assert.doesNotMatch(launcher, /shared-agents\.mjs/);
 });
 
@@ -179,4 +179,19 @@ test('agent CLI homes are created when absent but never replaced or followed', a
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('no supervised child inherits the Supervisor token; nginx and MCP run under their own UIDs', () => {
+  const env = spawnSync('bash', ['-c', `${launcher.match(/^no_supervisor_env=.*$/m)[0]}\n"\${no_supervisor_env[@]}" sh -c 'echo "\${SUPERVISOR_TOKEN-unset} \${HASSIO_TOKEN-unset} \${KEEP-unset}"'`], {
+    encoding: 'utf8',
+    env: { ...process.env, SUPERVISOR_TOKEN: 'fake-supervisor', HASSIO_TOKEN: 'fake-hassio', KEEP: 'kept' },
+  });
+  assert.equal(env.status, 0, env.stderr);
+  assert.equal(env.stdout.trim(), 'unset unset kept');
+  const starts = launcher.match(/^start_child \w+ \\\n  .*$/gm);
+  assert.equal(starts.length, 4);
+  for (const start of starts) assert.match(start, /\n  "\$\{no_supervisor_env\[@\]\}" /);
+  assert.match(launcher, /start_child nginx \\\n  "\$\{no_supervisor_env\[@\]\}" su-exec ha-ingress:ha-ingress \/usr\/sbin\/nginx/);
+  assert.match(launcher, /start_child mcp \\\n  "\$\{no_supervisor_env\[@\]\}" \/opt\/woow\/bin\/ha-opendesign-mcp$/m);
+  assert.match(launcher, /prepare_owned_dir "\$dir" ha-ingress:ha-ingress/);
 });
