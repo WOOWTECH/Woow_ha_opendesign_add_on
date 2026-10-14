@@ -34,6 +34,7 @@ check(config.get("arch") == ["amd64"], "the core image is amd64-only; only amd64
 check(config.get("ingress") is True, "ingress must be enabled")
 check(config.get("ingress_stream") is True, "ingress_stream must be enabled")
 check(config.get("ingress_port") == 8099, "ingress port must be 8099")
+check("ingress_entry" not in config, "no ingress_entry: '/' makes Supervisor 2026.09 build <token>// URLs that 404")
 check(config.get("ports") == {"8081/tcp": None} and set(config.get("ports_description", {})) == {"8081/tcp"} and "webui" not in config, "only the unmapped built-in MCP port 8081 may be declared")
 check(not config.get("homeassistant_api") and not config.get("hassio_api") and not config.get("full_access"), "built-in MCP administration relies on Ingress login; no HA/Supervisor API access")
 check(config.get("backup") == "cold", "cold backup is required")
