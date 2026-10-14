@@ -105,6 +105,8 @@
 
 - **監管**：launcher 從 3 個變 4 個（`mcp_pid`），`wait -n` 任一結束 → TERM 全部、5 s 後 KILL → 非 0 結束 → Supervisor（watchdog）重啟。child 由 gateway 自己的 `lifecycle.Supervisor` 管（3 次退避重試，之後 `failed`，readiness 503，但不拖垮 OpenDesign）。
 - daemon 短暫不可用（SIGSTOP）：MCP 不掛，工具回 `BACKEND_TIMEOUT`、readiness 503；恢復後約 7 s 回到 200（`evidence/07-daemon-pause.txt`）。daemon 崩潰（SIGKILL）：整組停、容器約 2 s 內重啟、18 s 就緒，**同一個 token 照用**（`evidence/08-daemon-restart.txt`）。
+- **重啟空窗（0.2.0 整合後實測，`run-proof.sh` step 14，每秒一次完整握手）**：daemon 被 SIGKILL 的瞬間 MCP 仍在，initialize／tools/list 200、工具回 `BACKEND_UNAVAILABLE`；接著整組重啟約 2 s 連不上（ConnectError）；容器回來後有約 1 s initialize 回 **502**（gateway 已聽 8081、child 還沒起來，與另外六支「後端未設定時 502」同一個 vendored 行為），之後 initialize／tools/list 200、工具回 `BACKEND_UNAVAILABLE`，約 6 s 後工具正常。要消掉那 1 s 的 502 需改 vendored gateway（cc588488 的 repo），本 repo 不改 vendored 檔。
+- **SIGTERM（0.2.0）**：ha-shell 的 `headless-entry.mjs` 修正後，對 daemon 送 TERM 會印 `SIGTERM received` 並以 0 結束；`docker stop` 整組約 1.5 s、沒有 KILL fallback（team ha-integrate `stop-timing.log`）。下一點是 0.1.x／core-standin 時的舊觀察。
 - **觀察（OpenDesign 端、給 ha-shell）**：在核心映像替身上單獨對 daemon 送 SIGTERM，`headless-entry.mjs` 印出 `SIGTERM received` 後 240 s 內沒有結束；第一次試跑時拖了約 1 分鐘後以 status 134（Aborted, core dumped）結束。HA 正常停止會走 launcher 的 5 s 後 KILL，影響有限，但停機會卡滿寬限期。
 - **備份／還原**：`/data/mcp` 在 `backup: cold` 內（token 明文在備份裡，與舊 add-on 相同）；還原後 root-owned 的樹由 vendored `entrypoint.prepare_data()` 的有界修復改回 10001。還原到另一台 HA 後建議輪替 token。**尚未在 HA 實機驗證**。
 - **遷移**：舊 add-on 的 `/data/mcp` 屬於另一個 add-on，不搬；內建版第一次啟動產生新 token。使用者步驟：更新 OpenDesign add-on → 開 `/mcp-admin/` 設定端點、複製 token／Claude.ai 網址 → 各用戶端換新網址與 token → 移除 Woow OpenDesign MCP Server。DOCS.md 文字在 patch 內。
