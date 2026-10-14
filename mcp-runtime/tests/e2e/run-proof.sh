@@ -156,6 +156,12 @@ s09() {
   docker exec -e HOME=/tmp/cc $P-client sh -c "mkdir -p /tmp/cc && cd /tmp/cc && claude mcp add -s user --transport http od-bearer http://$ADDON:8081/mcp --header 'Authorization: Bearer $TOKEN' >/dev/null && claude mcp add -s user --transport http od-secret http://$ADDON:8081/private_$TOKEN/mcp >/dev/null && claude mcp add -s user --transport http od-no-auth http://$ADDON:8081/mcp >/dev/null && timeout 120 claude mcp list"
 }
 
+s11() {
+  log "OpenDesign page through a Supervisor-style ingress proxy: MCP Server entry -> /mcp-admin/ (Chromium)"
+  docker cp "$E2E/mcp_link_browser.mjs" $P-supervisor:/opt/ha-opendesign/mcp_link_browser.mjs
+  docker exec -e ADDON=$ADDON -e FAKE_ADMIN_ID="$FAKE_ADMIN_ID" $P-supervisor node /opt/ha-opendesign/mcp_link_browser.mjs
+}
+
 step 01-startup.txt s01
 TOKEN=$(admin reveal)
 [[ ${#TOKEN} == 43 ]] || { echo "unexpected token shape"; exit 1; }
@@ -168,6 +174,7 @@ step 06-container.txt s06
 step 07-daemon-pause.txt s07
 step 08-daemon-restart.txt s08
 step 09-claude-code.txt s09
+step 11-mcp-link-browser.txt s11
 
 patterns=(); for t in "${SEEN[@]}"; do patterns+=(-e "$t"); done
 if grep -rlF "${patterns[@]}" "$EV"; then echo "LEAK: token found in evidence" | tee "$EV/10-leak-check.txt"; exit 1; fi

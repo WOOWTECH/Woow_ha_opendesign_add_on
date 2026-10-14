@@ -180,6 +180,14 @@ try {
   await terminalLink.waitFor({ timeout: 15_000 });
   assert.equal(await terminalLink.getAttribute('href'), `${prefix}/terminal/`);
   assert.equal(await terminalLink.getAttribute('target'), '_blank');
+  // The built-in MCP server's administration entry sits next to it. This
+  // proxy's source is not the Supervisor peer, so only the link is checked
+  // here; mcp-runtime/tests/e2e/mcp_link_browser.mjs follows it from there.
+  const mcpLink = page.getByRole('link', { name: 'Open built-in MCP server administration' });
+  await mcpLink.waitFor({ timeout: 15_000 });
+  assert.ok(await mcpLink.isVisible(), 'MCP Server entry must be visible');
+  assert.equal(await mcpLink.getAttribute('href'), `${prefix}/mcp-admin/`);
+  assert.equal(await mcpLink.getAttribute('target'), '_blank');
   const terminalSocketPromise = new Promise((resolve) => {
     context.on('page', (newPage) => {
       newPage.on('websocket', (socket) => {

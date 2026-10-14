@@ -192,7 +192,53 @@ test('nginx exposes ttyd only through the ingress-prefixed terminal proxy', () =
   assert.match(nginx, /proxy_pass http:\/\/127\.0\.0\.1:7681;/);
   assert.match(nginx, /sub_filter '\"\/terminal\/' '\"\$safe_ingress_path\/terminal\/'/);
   assert.match(shim, /od-agent-terminal-link/);
-  assert.match(shim, /href = `\$\{prefix\}\/terminal\//);
+  assert.match(shim, /path: '\/terminal\/'/);
+});
+
+function mountLinks(initialPath) {
+  const appended = [];
+  class Node {
+    constructor(tag) { this.tagName = tag.toUpperCase(); this.children = []; this.attributes = {}; this.style = {}; }
+    append(child) { this.children.push(child); }
+    setAttribute(name, value) { this.attributes[name] = String(value); }
+  }
+  const body = { append(node) { appended.push(node); } };
+  const document = {
+    body,
+    readyState: 'complete',
+    documentElement: {},
+    createElement: (tag) => new Node(tag),
+    getElementById: (id) => (appended.some((node) => node.id === id) ? appended[0] : null),
+  };
+  const location = { pathname: initialPath, search: '', hash: '', href: `http://localhost${initialPath}`, host: 'localhost', origin: 'http://localhost' };
+  vm.runInNewContext(shim, {
+    window: { __OD_INGRESS_PATH__: prefix, location, fetch() {}, addEventListener() {} },
+    location,
+    history: { state: null, pushState() {}, replaceState() {} },
+    XMLHttpRequest: class { open() {} },
+    Element: class { setAttribute() {} },
+    CSSStyleDeclaration: class { setProperty() {} },
+    CSSStyleSheet: class { insertRule() {} },
+    MutationObserver: class { observe() {} },
+    document,
+    navigator: {},
+    URL,
+    Request,
+  });
+  return appended;
+}
+
+test('shim adds MCP Server and CLI Terminal entry points on the ingress prefix, not inside project previews', () => {
+  const [bar, ...rest] = mountLinks(`${prefix}/`);
+  assert.equal(rest.length, 0);
+  assert.equal(bar.id, 'od-ha-shell-links');
+  assert.deepEqual(bar.children.map((link) => [link.id, link.href, link.textContent, link.target, link.attributes['aria-label']]), [
+    ['od-mcp-admin-link', `${prefix}/mcp-admin/`, 'MCP Server', '_blank', 'Open built-in MCP server administration'],
+    ['od-agent-terminal-link', `${prefix}/terminal/`, 'CLI Terminal', '_blank', 'Open agent CLI terminal for login'],
+  ]);
+  assert.ok(bar.children.every((link) => link.rel === 'noopener noreferrer'));
+  assert.deepEqual(mountLinks(`${prefix}/api/projects/p1/raw/index.html`), []);
+  assert.deepEqual(mountLinks(`${prefix}/api/projects/p1/preview/s1/index.html`), []);
 });
 
 test('repeated iframe src setAttribute with the same logical URL commits once', () => {

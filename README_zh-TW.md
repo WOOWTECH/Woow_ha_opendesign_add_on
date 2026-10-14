@@ -2,7 +2,7 @@
 
 以 WoowTech 共用 OpenDesign core 映像（與 WOOW PaaS 相同的建置）提供 OpenDesign **0.24.1**，封裝成獨立的 Home Assistant 附加元件，支援 `amd64`。
 
-- 僅透過 Home Assistant Ingress／側邊欄存取，不發布區域網路連接埠。
+- 透過 Home Assistant Ingress／側邊欄存取。唯一宣告的區域網路連接埠是內建 MCP server 的 `8081/tcp`，預設不映射。
 - OpenDesign 只監聽 `127.0.0.1`，由非特權 nginx 提供 Supervisor Ingress 入口。
 - OpenDesign 原生 API BYOK 的供應商、模型與 API 金鑰設定只保留在各管理員瀏覽器的 localStorage；金鑰不會寫入 `/data`、附加元件選項、日誌或 Home Assistant 備份。
 - OpenDesign 專案與應用程式狀態保存於 `/data/opendesign`，由冷備份涵蓋。
@@ -13,6 +13,7 @@
 - OpenDesign 旁邊執行 **Omnigent host**（WOOW 共用 `omnigent-host` 套件）：平時只等待登入；在 OpenDesign **Plugins → Omnigent** 對話框（或 CLI Terminal 執行 `omnigent login <伺服器網址>`）連線後，這個附加元件就會成為 Omnigent 的一台機器。
 - 透過 OpenDesign 原生 **Plugins** 頁面安裝的插件與 Skills，會由同一個 daemon 提供給 Claude Code、Codex、Pi、OpenCode 的專案執行流程。
 - OpenDesign 頁面提供受 HA Ingress 保護的 **CLI Terminal**，可在 GUI 中完成 Claude Code、Codex、Pi 的互動登入。OpenCode 更多 API provider 可在 **Settings → API providers** 設定。
+- **內建 OpenDesign MCP server**（取代另一支「Woow OpenDesign MCP Server」附加元件）：MCP 用戶端連 `8081/tcp`＋Bearer token，Claude.ai 連接器用 `/private_<token>/mcp`。管理頁（token、工具權限）是 OpenDesign 頁面右下角 **CLI Terminal** 旁的 **MCP Server**，只能經 HA Ingress 進入。詳見 [DOCS.md](DOCS.md#built-in-mcp-server)。
 
 [English](README.md) · [附加元件說明](DOCS.md)
 
