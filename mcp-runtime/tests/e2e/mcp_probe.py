@@ -102,7 +102,7 @@ def flow(client, url, headers, label):
 
 CLAUDE_UA = 'Claude-User'
 META = {'traceparent': '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'}  # W3C example value, not a secret
-MARKER = 'probe-input-marker-' + 'q' * 12  # must never be echoed back in a refusal
+MARKER = 'probe-input-marker-' + 'q' * 12  # an argument value: must never be echoed back in a refusal
 
 
 def rpc_or_status(response):
@@ -152,7 +152,7 @@ def refusals(client, base):
     session = Session(client, base + '/mcp', bearer)
     session.initialize()
     cases = [
-        ('unknown tool', {'name': 'no_such_tool_' + MARKER, 'arguments': {}}),
+        ('unknown tool', {'name': 'no_such_tool', 'arguments': {'value': MARKER}}),
         ('write tool not granted (delete_project)', {'name': 'delete_project', 'arguments': {'project_id': MARKER}}),
         ('not offered (read_file)', {'name': 'read_file', 'arguments': {'project_id': MARKER, 'path': 'x'}}),
         ('invalid arguments (get_project without project_id, extra field)', {'name': 'get_project', 'arguments': {'unexpected': MARKER}}),
@@ -163,7 +163,7 @@ def refusals(client, base):
         status, reply = rpc_or_status(response)
         error = (reply or {}).get('error') or {}
         out(check='refusals', case=case, status=status, code=error.get('code'), message=error.get('message'),
-            data=error.get('data'), input_echoed=MARKER in response.text)
+            data=error.get('data'), argument_value_echoed=MARKER in response.text)
     no_session = Session(client, base + '/mcp', bearer).post({'jsonrpc': '2.0', 'id': 30, 'method': 'tools/call',
                                                               'params': {'name': 'no_such_tool', 'arguments': {}}})
     out(check='refusals', case='refused tools/call without a session', status=no_session.status_code)

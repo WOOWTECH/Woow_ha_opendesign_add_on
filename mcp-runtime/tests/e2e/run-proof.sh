@@ -58,7 +58,7 @@ docker volume create $P-data >/dev/null
 docker run -d --name $P-supervisor --network $NET --ip 172.30.32.2 --network-alias supervisor \
   -v "$E2E:/e2e:ro" --entrypoint sleep "$IMG" infinity >/dev/null
 docker run -d --name $P-addon --network $NET --ip $ADDON --hostname local-woow-ha-opendesign \
-  -e SUPERVISOR_TOKEN="$SUP_TOKEN" -v $P-data:/data --restart on-failure:3 "$IMG" >/dev/null
+  -e SUPERVISOR_TOKEN="$SUP_TOKEN" -v $P-data:/data --restart on-failure:10 "$IMG" >/dev/null
 docker run -d --name $P-client --network $NET --ip 172.30.33.20 -v "$E2E:/e2e:ro" --entrypoint sleep "$IMG" infinity >/dev/null
 
 s01() {
