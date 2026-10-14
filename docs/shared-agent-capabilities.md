@@ -1,6 +1,6 @@
 # OpenDesign native agent, plugin, and Skill setup
 
-This add-on uses the plugin and Skill registries provided by its pinned OpenDesign 0.21.1 runtime. It does not need to copy an installed OpenDesign plugin into each CLI's global extension directory.
+This add-on uses the plugin and Skill registries provided by its pinned OpenDesign 0.24.1 runtime (WoowTech core image). It does not need to copy an installed OpenDesign plugin into each CLI's global extension directory.
 
 ## What is shared
 

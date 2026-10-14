@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0 (draft, unreleased)
+
+- **Built on the shared WoowTech OpenDesign core image** instead of upstream `ghcr.io/nexu-io/od:0.21.1`: OpenDesign 0.24.1 from the WoowTech fork, the same build the WOOW PaaS runs, with its white-label, zh-TW locale and export patches, the bundled `woowtech-brand` skill and `woow-omnigent` plugin, and no `brainstorming` skill. The Dockerfile default is an all-zero placeholder digest of `ghcr.io/woowtech/open-design-core` until the core is published; builds pass `BUILD_FROM`.
+- Agent CLIs now come from the core: Claude Code `2.1.296`, Codex CLI `0.162.1`, Pi `1.1.0` and OpenCode `1.18.33` (was the add-on's own OpenCode `1.18.29`). The build asserts every version as UID 1001 and fails on a different core.
+- **Omnigent host:** the shared WOOW `omnigent-host` kit (woow-paas-charts `6a6d1f9`, sha256-verified) runs its supervisor next to OpenDesign. It waits for a login from OpenDesign's native Omnigent dialog or `omnigent login` in the CLI Terminal, then keeps `omnigent host` connected. State lives in `/data/opendesign/home/.omnigent`.
+- amd64 only, like the core image. The image licence label now reads `Apache-2.0 AND MIT` (OpenDesign and the add-on code).
+- Ingress fixes for OpenDesign 0.24.1: agent and model icons built from template literals and applied as inline `mask-image` styles are now prefixed by nginx (they were fetched from the HA root before the shim could react), inline style attribute updates are re-scoped, and redirects stay relative to the HA origin (`absolute_redirect off`). The white-label "Contact us" path `/_woow/support` redirects to WoowTech support.
+- OpenDesign now stops on TERM: 0.24.1's `shutdown()` no longer closes the HTTP server, so the entry closes it and exits instead of waiting for the KILL deadline.
+- The `open-design` passwd home is the persistent `/data/opendesign/home`, so tools that ignore `$HOME` (OpenCode's cache, data and state) persist too. Missing agent CLI homes (`.claude`, `.codex`, `.config`, `.pi/agent`) are created at startup; existing entries are left alone.
+- The launcher supervises a list of named required processes, which makes adding one a single `start_child` line, and names the process that exited.
+
 ## 0.1.10
 
 - Synchronize Agent Skills, MCP server definitions, portable plugin manifests, and a default working directory across Claude Code, Codex, Pi, and OpenCode.
