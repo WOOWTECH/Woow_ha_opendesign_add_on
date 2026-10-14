@@ -85,7 +85,7 @@
 
 - 現況：cc588488 的實作在 `Woow_ha_mcp_addons` 分支 `boot-auto-0112`（PR #3，未合併），頭為 `72b672e22ae301132b43a5acd204f61d3be2bc29`（serverInfo 版本 0.1.13：`/private_<token>/mcp`、`redact.py` 遮罩 log、`params._meta` 接受與未知方法回應）。`claude-delivery`（已發佈 0.1.11）是 `1113955`，沒有密鑰網址。
 - **原型釘 `72b672e`**（`mcp-runtime/VENDOR.json` 記 36 檔 sha256）。方式：`mcp-runtime/vendor.sh <clone> <full sha>` 用 `git archive` 只取需要的路徑；`mcp-runtime/tests/verify_vendor.py`（patch 後由 `tests/run.sh` 執行）檢查 vendor 沒被改、requirements 與 `.in` 完全一致。
-- **發版前**：等 PR #3 合併、cc588488 回報合併後 commit，重跑 `vendor.sh` 改釘那個 SHA（永不追分支），再跑 `mcp-runtime/tests/e2e/run-proof.sh`；若 uv.lock 版本有變，更新 `requirements/*.in` 後跑 `requirements/lock.sh`。
+- **已改釘（2026-10-14，team ha-integrate）**：PR #3 已合併進 `claude-delivery`，合併 commit `93727eaab0e05245d63eec7400294fe14f3cf6b9`（serverInfo 0.1.14）；`vendor.sh` 重釘後 36 檔中只有 `mcp_admin_core/{__init__,gateway,policy}.py` 改變（ed3122b：被拒的 tools/call 改回 HTTP 200＋JSON-RPC -32602／-32603 與欄位原因、不回顯輸入；其他不合格請求仍 403），uv.lock 未變。原本：等 PR #3 合併、cc588488 回報合併後 commit，重跑 `vendor.sh` 改釘那個 SHA（永不追分支），再跑 `mcp-runtime/tests/e2e/run-proof.sh`；若 uv.lock 版本有變，更新 `requirements/*.in` 後跑 `requirements/lock.sh`。
 - 本地沒有改 vendored 檔，所以重新釘版只會換 `vendor/` 與 `VENDOR.json`；本地膠水只依賴 `make_apps`、`ProductStore`、`child_spec`、`Supervisor`、`HealthMonitor`、`valid_user_id`、`redact`、`run_product.Listener` 這幾個介面。
 
 ## 9. Python 與依賴
@@ -138,7 +138,7 @@
 2. **不提供**關閉內建 MCP 的選項，永遠啟動（原型本來就沒有此選項，`options: {}` 不變）。
 3. MCP 程序結束 → 整個 add-on 重啟 —— 維持現狀（§11）。
 4. vendored `opendesign_mcp_server` 視為 WoowTech 自有程式碼；來源與授權註記見 repo `mcp-runtime/PROVENANCE.md`（Gitea `WOOWTECH/woow-mcp-server@614ae663`，MIT © WOOWTECH，LICENSE 與該 commit 的 `apps/opendesign/LICENSE` 逐位元相同）。
-5. 原型維持釘 `72b672e`；PR #3 合併後改釘合併 commit（§8）。
+5. 原型曾釘 `72b672e`；PR #3 合併後已改釘合併 commit `93727ea`（0.1.14，§8）。
 6. **後續（未決定）**：在 OpenDesign 介面放 `/mcp-admin/` 的入口連結；目前只能手動開網址（DOCS.md 已寫）。
 
 ## 15. 風險／未驗證

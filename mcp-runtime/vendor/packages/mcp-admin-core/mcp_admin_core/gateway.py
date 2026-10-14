@@ -29,7 +29,7 @@ from . import redact, ui
 
 from . import VERSION
 from .config import ConfigError, State, Store, strict_json
-from .policy import Denied, UnknownMethod, authorize, filter_list
+from .policy import Denied, ToolCallRefused, UnknownMethod, authorize, filter_list
 from .ha_role import valid_user_id
 
 MAX_REQUEST = 262144
@@ -655,30 +655,44 @@ def make_apps(store: Store, tools, child: httpx.AsyncClient, *,
         HTTPException(404): same status, body and headers, no WWW-Authenticate), so the reply never says whether
         the path exists, the token was revoked or the guess was close. The request's own Authorization header is
         never read there, and an Origin header is allowed (never forwarded: the child only gets the gateway's own
-        headers). /mcp is unchanged: 401 with WWW-Authenticate, Origin 403."""
+        headers). /mcp is unchanged: 401 with WWW-Authenticate, Origin 403.
+
+        0.1.14: on both paths, a well-formed tools/call the policy refuses (policy.ToolCallRefused) is answered HTTP 200
+        with a JSON-RPC error giving the reason, when it carries a session id; without one it stays 403 as before."""
         def authorized(state):
             return token_valid(request, state) if secret is None else secret_valid(secret, state)
 
         def refused():
             return BadRequest(401) if secret is None else HTTPException(404)
 
-        state = store.load()
-        if not authorized(state):
+        def unauthorized():
             if secret is not None:
                 raise refused()
             return Response(status_code=401, headers={"WWW-Authenticate": "Bearer"})
+
+        def tool_refusal(ident, refusal):
+            """0.1.14: a refused well-formed tools/call is answered as JSON-RPC (ToolCallRefused.error()), not 403."""
+            return json_reply({"jsonrpc": "2.0", "id": ident, "error": refusal.error()}, 200, {"Cache-Control": "no-store"})
+
+        state = store.load()
+        if not authorized(state):
+            return unauthorized()
         if request.method not in ("GET", "POST", "DELETE"):  # any other method, only after the token check
             return Response(status_code=405, headers={"Allow": "GET, POST, DELETE"})
         if secret is None and request.headers.get("origin") is not None:
             raise BadRequest(403)  # Browser clients not in the Bearer contract; the secret path is for Claude.ai.
         if request.url.query:
             raise BadRequest()
-        method = message = None
+        method = message = refusal = None
         content = b""
         if request.method == "POST":
             message = await json_body(request)
             try:
                 method = authorize(message, tools, state)
+            except ToolCallRefused as refused_call:
+                # 0.1.14: answered below with its reason when the request also carries usable session headers (as any
+                # tools/call needs), never with a slot or the child; otherwise still 403, as in 0.1.13.
+                method, refusal = "tools/call", refused_call
             except UnknownMethod as unknown:
                 # 0.1.13: answered here, before the session check, a slot or the child (Claude.ai sends server/discover
                 # first and needs a JSON-RPC answer to fall back to initialize). Only after the token check above.
@@ -697,9 +711,11 @@ def make_apps(store: Store, tools, child: httpx.AsyncClient, *,
         for name in ("mcp-session-id", "mcp-protocol-version", "last-event-id"):
             values = request.headers.getlist(name)
             if len(values) > 1 or (values and (len(values[0]) > 256 or not re.fullmatch(r"[\x21-\x7e]+", values[0]))):
-                raise BadRequest()
+                raise BadRequest(403 if refusal is not None else 400)
             if values:
                 headers[name] = values[0]
+        if refusal is not None and "mcp-session-id" not in headers:
+            raise BadRequest(403)  # a refused call without a session: unchanged from 0.1.13
         if method != "initialize" and "mcp-session-id" not in headers:
             # 0.1.8 (0.1.6 RC GATEWAY-2): every child is stateful, so anything but initialize needs the session it
             # opened (MCP: such a server SHOULD answer 400). Forwarded, the pinned Python SDK children opened a new
@@ -713,6 +729,18 @@ def make_apps(store: Store, tools, child: httpx.AsyncClient, *,
                 return Response(status_code=400, headers={"Cache-Control": "no-store"})
             return child_status_reply(message.get("id") if request.method == "POST" else None, 400,
                                       {"Cache-Control": "no-store"})
+        if refusal is not None:
+            # Decided again on fresh state (reading the body yielded): a revoked token is still refused as above, and a
+            # call the policy now allows takes the normal path below.
+            state = store.load()
+            if not authorized(state):
+                return unauthorized()
+            try:
+                authorize(message, tools, state)
+            except ToolCallRefused as refused_call:
+                return tool_refusal(message["id"], refused_call)
+            except Denied:
+                raise BadRequest(403) from None
         try:
             async with asyncio.timeout(1):
                 await slots.acquire()
@@ -729,6 +757,10 @@ def make_apps(store: Store, tools, child: httpx.AsyncClient, *,
             if request.method == "POST":
                 try:
                     authorize(message, tools, state)
+                except ToolCallRefused as refused_call:
+                    # The policy changed while this call waited for a slot: the same answer as above (the slot is
+                    # released by the finally below; the child is never reached).
+                    return tool_refusal(message["id"], refused_call)
                 except Denied:
                     raise BadRequest(403) from None
                 forwarded = message

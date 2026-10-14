@@ -1,6 +1,8 @@
 """Audited dispatch allowlist. Tool advertisements are not authorization."""
 from dataclasses import dataclass
+import functools
 import json
+import re
 from typing import Literal, Mapping, get_args, get_origin
 
 from pydantic import BaseModel, ValidationError
@@ -21,6 +23,125 @@ class UnknownMethod(Denied):
     def __init__(self, request):
         super().__init__("method not found")
         self.request = request  # True when the message has an id (a request), False for a notification
+
+
+class ToolCallRefused(Denied):
+    """0.1.14: a well-formed tools/call request (string or integer id, object params with only name and arguments, a
+    string name) that the policy refuses. The refusal is unchanged; only its answer is: the gateway replies HTTP 200
+    with the JSON-RPC error error() builds (after the token and session checks, without a slot or the child), so a
+    model sees why and can correct the call. Claude.ai showed the former HTTP 403 only as a transport failure.
+    Still a Denied with the former text, so a caller that does not tell them apart keeps refusing it.
+
+    kind is one of KINDS. error() carries the tool name and, for invalid arguments, sanitized pydantic errors: never
+    an argument value (argument_errors), a backend address, a credential or a token."""
+    KINDS = {"unknown_tool": "tool not permitted", "invalid_params": "invalid tool arguments",
+             "operation_not_permitted": "operation not permitted", "backend_not_configured": "configured backend required"}
+
+    def __init__(self, kind, tool, errors=()):
+        super().__init__(self.KINDS[kind])
+        self.kind = kind
+        self.tool = tool
+        self.errors = list(errors)
+
+    def error(self):
+        """The JSON-RPC error object. -32602 (invalid params, MCP's code for an unknown tool or invalid arguments) when
+        the request itself must change; -32603 (internal error) for a backend the add-on has not been configured with:
+        the arguments are valid and no other call would succeed until an administrator configures the add-on."""
+        if self.kind == "unknown_tool":
+            # The same answer for a tool that does not exist and one that is disabled or lacks its write grant.
+            return {"code": -32602, "message": "Unknown tool", "data": {"tool": self.tool[:TOOL_NAME_LIMIT]}}
+        if self.kind == "invalid_params":
+            return {"code": -32602, "message": "Invalid params", "data": {"tool": self.tool, "errors": self.errors}}
+        if self.kind == "operation_not_permitted":
+            return {"code": -32602, "message": "Operation not permitted", "data": {"tool": self.tool, "reason": (
+                "write operation disabled by the add-on policy; an administrator can enable it in the add-on panel")}}
+        return {"code": -32603, "message": "Backend not configured", "data": {"tool": self.tool}}
+
+
+TOOL_NAME_LIMIT = 128
+ARGUMENT_ERROR_LIMIT = 20
+ARGUMENT_ERROR_TEXT = 300
+# pydantic error types whose message is fixed text or names only the model's own limits (allowed values, pattern,
+# bounds, lengths, the model's class name); the count in too_short/too_long is a length, never content. Any other type
+# (union_tag_invalid quotes the input tag; *_parsing, url_*, json_invalid, mapping_type... quote a parser's error text;
+# custom types are arbitrary) gets FIXED_ARGUMENT_ERROR. value_error/assertion_error: see argument_errors().
+PLAIN_ERROR_TYPES = frozenset({
+    "missing", "extra_forbidden", "literal_error", "enum", "string_pattern_mismatch", "string_too_short",
+    "string_too_long", "too_short", "too_long", "greater_than", "greater_than_equal", "less_than", "less_than_equal",
+    "multiple_of", "finite_number", "string_type", "string_sub_type", "string_unicode", "int_type", "int_parsing",
+    "int_parsing_size", "int_from_float", "float_type", "float_parsing", "bool_type", "bool_parsing", "dict_type",
+    "list_type", "tuple_type", "set_type", "frozen_set_type", "model_type", "model_attributes_type", "none_required",
+    "union_tag_not_found", "invalid_key", "url_type", "url_too_long", "url_scheme", "frozen_field", "is_instance_of",
+    "date_type", "datetime_type", "time_type", "decimal_type", "decimal_parsing", "uuid_type", "bytes_type",
+    "iterable_type", "set_item_not_hashable", "default_factory_not_called"})
+FIXED_ARGUMENT_ERROR = "Value not accepted by this field's rules (see the tool's inputSchema)"
+# A reviewed validator's own message (raise ValueError('duplicate nodes')): plain words, no quotes or colons. Python's
+# own ValueError texts quote the value they refused (int('x'): "invalid literal for int() with base 10: 'x'").
+PLAIN_VALIDATOR_TEXT = re.compile(r"[A-Za-z][A-Za-z0-9 ,;/()._-]{0,199}")
+ERROR_TYPE = re.compile(r"[a-z][a-z_]{0,63}")
+
+
+@functools.lru_cache(maxsize=None)
+def schema_words(model):
+    """Every member name, title, $defs name and string const/enum value of `model`'s JSON schema: the only strings an
+    error location may show. Others (a key the caller made up, a dict key) are the caller's input and become "*"."""
+    try:
+        schema = model.model_json_schema()
+    except Exception:  # a model without a JSON schema: every named location part becomes "*"
+        return frozenset()
+    words, todo = set(), [schema]
+    while todo:
+        item = todo.pop()
+        if isinstance(item, dict):
+            for key in ("properties", "$defs"):
+                if isinstance(item.get(key), dict):
+                    words.update(item[key])
+            words.update(value for key in ("title", "const") if isinstance(value := item.get(key), str))
+            words.update(value for value in _listed(item.get("enum")) if isinstance(value, str))
+            todo += list(item.values())
+        elif isinstance(item, list):
+            todo += item
+    return frozenset(words)
+
+
+def input_strings(value):
+    """The caseless strings (keys and values) of the caller's arguments that a message could echo; those shorter than
+    3 characters are too common in fixed text to tell apart and are not looked for."""
+    found, todo = set(), [value]
+    while todo:
+        item = todo.pop()
+        if isinstance(item, str):
+            if 3 <= len(item) <= ARGUMENT_ERROR_TEXT:
+                found.add(item.casefold())
+        elif isinstance(item, dict):
+            todo += list(item.keys()) + list(item.values())
+        elif isinstance(item, list):
+            todo += item
+    return found
+
+
+def argument_errors(model, error, arguments):
+    """At most ARGUMENT_ERROR_LIMIT {field, message, type} entries for a ValidationError, without any argument value:
+    pydantic's input and ctx are never read; the location keeps indexes and schema_words only; the message is kept
+    for PLAIN_ERROR_TYPES and plain validator text, else (or when it contains any other caller string) fixed."""
+    words, entries = schema_words(model), []
+    # A caller string that is one of the model's own words (a member name, an allowed value) tells nothing new.
+    echoes = input_strings(arguments) - {word.casefold() for word in words}
+    for detail in error.errors(include_url=False, include_input=False, include_context=False)[:ARGUMENT_ERROR_LIMIT]:
+        kind = detail.get("type") if isinstance(detail.get("type"), str) else ""
+        field = ".".join(str(part) if type(part) is int or part in words else "*" for part in detail.get("loc", ()))
+        text = detail.get("msg") if isinstance(detail.get("msg"), str) else ""
+        if kind in ("value_error", "assertion_error"):
+            own = text.split(", ", 1)[1] if ", " in text else ""
+            text = text if PLAIN_VALIDATOR_TEXT.fullmatch(own) else FIXED_ARGUMENT_ERROR
+        elif kind not in PLAIN_ERROR_TYPES:
+            text = FIXED_ARGUMENT_ERROR
+        folded = text.casefold()
+        if any(echo in folded for echo in echoes):
+            text = FIXED_ARGUMENT_ERROR
+        entries.append({"field": field, "message": text[:ARGUMENT_ERROR_TEXT],
+                        "type": kind if ERROR_TYPE.fullmatch(kind) else "invalid"})
+    return entries
 
 
 # Served methods; anything else is UnknownMethod (0.1.13), never forwarded.
@@ -122,21 +243,25 @@ def authorize(message, tools: Mapping[str, Tool], state: State) -> str:
             raise Denied("invalid list")
     elif method == "tools/call":
         name = params.get("name")
-        if set(params) - {"name", "arguments"} or not isinstance(name, str) or not enabled(name, tools, state):
-            raise Denied("tool not permitted")
+        if set(params) - {"name", "arguments"} or not isinstance(name, str):
+            raise Denied("tool not permitted")  # malformed: stays HTTP 403
+        # 0.1.14: the four refusals of a well-formed call are ToolCallRefused (answered as JSON-RPC errors).
+        if not enabled(name, tools, state):
+            raise ToolCallRefused("unknown_tool", name)
+        model = tools[name].arguments
         try:
-            arguments = tools[name].arguments.model_validate(params.get("arguments", {}))
-        except ValidationError:
-            raise Denied("invalid tool arguments") from None
+            arguments = model.model_validate(params.get("arguments", {}))
+        except ValidationError as error:
+            raise ToolCallRefused("invalid_params", name, argument_errors(model, error, params.get("arguments"))) from None
         normalized = arguments.model_dump(mode="json")
         tool = tools[name]
         if tool.selector and normalized.get(tool.selector) in tool.write_operations:
             if f'{name}:{normalized[tool.selector]}' not in getattr(state, 'enabled_write_tools', ()):
-                raise Denied('operation not permitted')
+                raise ToolCallRefused("operation_not_permitted", name)
         if tool.requires_backend or (tool.selector and normalized.get(tool.selector) in tool.backend_required_operations):
             configured = getattr(state, 'configured', bool(state.backend_url and state.backend_key))
             if not configured:
-                raise Denied('configured backend required')
+                raise ToolCallRefused("backend_not_configured", name)
         params["arguments"] = normalized
     else:  # unreachable: every other method is UnknownMethod above
         raise Denied("method not permitted")
