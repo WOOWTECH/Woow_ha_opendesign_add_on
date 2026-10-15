@@ -17,12 +17,16 @@ for file in rootfs/opt/ha-opendesign/*.js rootfs/opt/ha-opendesign/*.mjs tests/*
   node --check "$file"
 done
 
-bash -n rootfs/usr/local/bin/ha-opendesign rootfs/usr/local/bin/ha-opendesign-agents .github/scripts/release-preflight.sh .github/scripts/import-core.sh tests/run.sh tests/container-smoke.sh tests/import-core.test.sh
+# bash -n checks only its first file argument: one call per script.
+for file in rootfs/usr/local/bin/ha-opendesign rootfs/usr/local/bin/ha-opendesign-agents .github/scripts/release-preflight.sh .github/scripts/import-core.sh .github/scripts/pin-core.sh tests/run.sh tests/container-smoke.sh tests/import-core.test.sh tests/pin-core.test.sh; do
+  bash -n "$file"
+done
 node --test tests/*.test.mjs
 bash tests/import-core.test.sh
+bash tests/pin-core.test.sh
 
 if command -v shellcheck >/dev/null 2>&1; then
-  shellcheck rootfs/usr/local/bin/ha-opendesign .github/scripts/release-preflight.sh .github/scripts/import-core.sh tests/run.sh tests/container-smoke.sh tests/import-core.test.sh
+  shellcheck rootfs/usr/local/bin/ha-opendesign .github/scripts/release-preflight.sh .github/scripts/import-core.sh .github/scripts/pin-core.sh tests/run.sh tests/container-smoke.sh tests/import-core.test.sh tests/pin-core.test.sh
 else
   echo "shellcheck: SKIP (not installed)"
 fi

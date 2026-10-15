@@ -2,6 +2,12 @@
 
 ## 0.2.1
 
+**Omnigent removed** (until Omnigent is stable; the WOOW PaaS drops it too):
+
+- The add-on no longer installs or starts the Omnigent host: the `omnigent-host` kit (`/etc/omnigent-host`), its CLI Terminal profile hook and the `omnigent-host-status` command are gone, and OpenDesign starts directly again. The CLI Terminal help no longer mentions Omnigent.
+- The core image's `woow-omnigent` plugin and skill are deleted in the add-on image (the build fails if either remains), so OpenDesign no longer opens the Omnigent setup project or connection dialog, and its Omnigent status reports *not installed*. The pinned core still contains the unused `omnigent` CLI until a core without Omnigent is pinned (`.github/scripts/pin-core.sh <tag> <digest>` updates every pin).
+- **Updating from 0.2.0:** at the first start, `/data/opendesign/home/.omnigent` (Omnigent configuration, host identity, logs and **the stored Omnigent login token**) is **moved, not deleted**, to `/data/opendesign/.backup/omnigent-<UTC time>/` (mode 0700) and the add-on log names the folder. Delete it from the CLI Terminal when you no longer need it. `/data/opendesign/home/studio` (Omnigent's session folder) is left as it is.
+
 **Built-in MCP server: the same 15 tools as the WOOW PaaS OpenDesign MCP, all on by default** (owner decision 2026-10-15).
 
 - New tools: `list_connectors`, `read_file`, `create_project`, `send_message` (0.2.0 offered 11; `delete_project` was off until granted). The full list: `health`, `version`, `list_agents`, `list_connectors`, `list_projects`, `get_project`, `create_project`, `delete_project`, `list_project_files`, `read_file`, `get_file_info`, `send_message`, `list_runs`, `list_plugins`, `list_skills`.

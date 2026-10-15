@@ -149,7 +149,7 @@ s07() {
   wait_ready 60
   probe "$TOKEN" health
 }
-# The OpenDesign node process itself, not the omnigent-host kit launcher (sh) that wraps it.
+# The OpenDesign node process itself (su-exec execs it directly).
 daemon_pid() {
   local pid
   pid=$(docker exec $P-addon pgrep -f '^/usr/local/bin/node /opt/ha-opendesign/headless-entry.mjs' | head -1)
