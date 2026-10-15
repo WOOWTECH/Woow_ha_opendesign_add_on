@@ -247,7 +247,9 @@ jobs:
           '
           docker cp tests/container-opencode-byok-e2e.mjs "$container:/tmp/container-opencode-byok-e2e.mjs"
           docker exec "$container" node /tmp/container-opencode-byok-e2e.mjs
-          if docker logs "$container" 2>&1 | grep -Fq -- "$BYOK_FAKE_KEY"; then
+          # Logs to a file first: `docker logs | grep -q` can end in SIGPIPE (141) under pipefail.
+          docker logs "$container" >"${RUNNER_TEMP}/release-gate-container.log" 2>&1
+          if grep -Fq -- "$BYOK_FAKE_KEY" "${RUNNER_TEMP}/release-gate-container.log"; then
             echo 'fake BYOK key leaked to container logs' >&2
             exit 1
           fi

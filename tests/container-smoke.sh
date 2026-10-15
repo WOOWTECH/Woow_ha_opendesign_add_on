@@ -297,7 +297,10 @@ docker exec -u 1001:1001 "$container" sh -ceu '
 # loopback OpenAI-compatible mock. The test script itself never writes its key.
 docker cp tests/container-opencode-byok-e2e.mjs "$container:/tmp/container-opencode-byok-e2e.mjs"
 docker exec "$container" node /tmp/container-opencode-byok-e2e.mjs
-if docker logs "$container" 2>&1 | grep -Fq -- "$BYOK_FAKE_KEY"; then
+# Read the logs to a file first: piping docker logs into a quiet grep lets grep exit on
+# the first match while docker logs is still writing; pipefail turns that SIGPIPE into 141.
+docker logs "$container" >"$tmp/container.log" 2>&1
+if grep -Fq -- "$BYOK_FAKE_KEY" "$tmp/container.log"; then
   echo 'fake BYOK key leaked to container logs' >&2
   exit 1
 fi
@@ -326,11 +329,12 @@ docker exec "$container" sh -ceu '
 # Every process (the kit's supervisor first, then OpenDesign) must stop on TERM
 # inside the launcher's grace period, without the KILL fallback.
 docker stop -t 10 "$container" >/dev/null
-if docker logs "$container" 2>&1 | grep -Fq 'grace; sending KILL'; then
+docker logs "$container" >"$tmp/container.log" 2>&1
+if grep -Fq 'grace; sending KILL' "$tmp/container.log"; then
   echo 'a process ignored TERM and needed the launcher KILL fallback' >&2
   exit 1
 fi
-docker logs "$container" 2>&1 | grep -Fq '[ha-opendesign] SIGTERM received; stopping OpenDesign'
+grep -Fq '[ha-opendesign] SIGTERM received; stopping OpenDesign' "$tmp/container.log"
 docker rm "$container" >/dev/null
 start_container
 wait_for_health
