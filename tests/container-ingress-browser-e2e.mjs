@@ -180,6 +180,14 @@ try {
   await terminalLink.waitFor({ timeout: 15_000 });
   assert.equal(await terminalLink.getAttribute('href'), `${prefix}/terminal/`);
   assert.equal(await terminalLink.getAttribute('target'), '_blank');
+  // The built-in MCP server's administration entry sits next to it. This
+  // proxy's source is not the Supervisor peer, so only the link is checked
+  // here; mcp-runtime/tests/e2e/mcp_link_browser.mjs follows it from there.
+  const mcpLink = page.getByRole('link', { name: 'Open built-in MCP server administration' });
+  await mcpLink.waitFor({ timeout: 15_000 });
+  assert.ok(await mcpLink.isVisible(), 'MCP Server entry must be visible');
+  assert.equal(await mcpLink.getAttribute('href'), `${prefix}/mcp-admin/`);
+  assert.equal(await mcpLink.getAttribute('target'), '_blank');
   const terminalSocketPromise = new Promise((resolve) => {
     context.on('page', (newPage) => {
       newPage.on('websocket', (socket) => {
@@ -233,22 +241,49 @@ try {
     console.error(`OpenDesign bootstrap diagnostics: ${JSON.stringify(diagnostics)}`);
     throw error;
   }
+  // First boot of the WoowTech core: its native Omnigent integration opens the
+  // bundled woow-omnigent setup project with the connection dialog. Check that
+  // dialog renders through ingress, then return home for the route checks.
+  const onboarded = await page.waitForURL((url) => url.pathname.startsWith('/projects/'), { timeout: 15_000 })
+    .then(() => true, () => false);
+  if (onboarded) {
+    await page.getByText('Connect Omnigent', { exact: true }).waitFor({ timeout: 15_000 });
+    assert.ok(await page.getByText('Server URL', { exact: true }).isVisible(), 'Omnigent connection dialog must render');
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.goto(`http://127.0.0.1:${proxyPort}${prefix}/`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await page.waitForFunction(() => window.__OD_HA_EXPORT_BRIDGE_INSTALLED__ === true, null, { timeout: 15_000 });
+    await page.waitForFunction(() => !document.body.textContent.includes('Loading OpenDesign…'), null, { timeout: 30_000 });
+  }
+  console.log(`first-boot Omnigent setup dialog: ${onboarded ? 'shown through ingress' : 'not shown (already completed)'}`);
   assert.equal(new URL(page.url()).pathname, '/', 'ingress transport prefix must be hidden from OpenDesign route logic');
-  const expandSidebar = page.getByRole('button', { name: 'Expand sidebar' });
-  if (await expandSidebar.count()) await expandSidebar.click();
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await page.waitForURL((url) => url.pathname === '/settings');
+  // OpenDesign 0.24.1: with the sidebar collapsed the nav-rail buttons sit
+  // under the main pane, expanding it re-renders (detaches) them, and two
+  // buttons are named Settings. Expand first, let the layout settle, click the
+  // rail test id, and retry a click that a concurrent re-render swallowed.
+  const navigate = async (locator, pathname) => {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        const expand = page.getByRole('button', { name: 'Expand sidebar' }).first();
+        if (await expand.isVisible().catch(() => false)) {
+          await expand.click({ timeout: 5_000 });
+          await page.waitForTimeout(500);
+        }
+        await locator().click({ timeout: 10_000 });
+        await page.waitForURL((url) => url.pathname === pathname, { timeout: 10_000 });
+        return;
+      } catch (error) {
+        if (attempt >= 3) throw error;
+      }
+    }
+  };
+  await navigate(() => page.getByTestId('entry-settings-button'), '/settings');
   await page.waitForFunction(() => (
     document.body.innerText.includes('Models & providers')
     && document.body.innerText.includes('API providers')
   ));
 
-  await page.getByText('Back to home', { exact: true }).click();
-  await page.waitForURL((url) => url.pathname === '/');
-  const expandAfterSettings = page.getByRole('button', { name: 'Expand sidebar' });
-  if (await expandAfterSettings.count()) await expandAfterSettings.click();
-  await page.getByRole('button', { name: 'Design systems', exact: true }).first().click();
-  await page.waitForURL((url) => url.pathname === '/design-systems');
+  await navigate(() => page.getByRole('button', { name: 'Back to home', exact: true }), '/');
+  await navigate(() => page.getByTestId('entry-nav-design-systems'), '/design-systems');
   await page.getByRole('heading', { name: 'Design systems', exact: true }).waitFor();
   // GitHub-hosted headless Chromium does not reliably emit Playwright download
   // events for programmatically clicked blob: anchors. Observe the exact anchor

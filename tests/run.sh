@@ -3,10 +3,14 @@ set -Eeuo pipefail
 cd "$(dirname "$0")/.."
 
 python3 tests/validate.py
+python3 mcp-runtime/tests/verify_vendor.py
+sh -n mcp-runtime/install.sh
+bash -n mcp-runtime/tests/e2e/run-proof.sh
 python3 tests/workflow-policy.test.py
+python3 tests/sign-in-hint.test.py
 python3 tests/import-core-policy.test.py
 
-for file in rootfs/opt/ha-opendesign/*.js rootfs/opt/ha-opendesign/*.mjs tests/*.mjs; do
+for file in rootfs/opt/ha-opendesign/*.js rootfs/opt/ha-opendesign/*.mjs tests/*.mjs mcp-runtime/tests/e2e/*.mjs docs/repro/*.cjs; do
   node --check "$file"
 done
 

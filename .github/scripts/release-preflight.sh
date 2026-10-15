@@ -24,7 +24,10 @@ if [[ -z "${GHCR_ACTOR:-}" || -z "${GHCR_TOKEN:-}" ]]; then
 fi
 accept='application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json'
 
-for arch in amd64 aarch64; do
+# The add-on is amd64 only (like the core image); keep the per-architecture
+# check so adding an architecture stays a one-word change.
+architectures="amd64"
+for arch in $architectures; do
   repository="woowtech/woow-ha-opendesign-${arch}"
   if ! token_json=$(curl --fail --silent --show-error --location --get \
     --user "${GHCR_ACTOR}:${GHCR_TOKEN}" \

@@ -10,6 +10,11 @@ on:
 permissions:
   contents: read
 
+env:
+  # Shared WoowTech OpenDesign core image (PaaS open-design image), published as
+  # the public ghcr.io/woowtech/open-design-core, pinned by digest (same as Dockerfile).
+  CORE_IMAGE: ghcr.io/woowtech/open-design-core:20261014.1921@sha256:bfec7cc6c96b559506f33dce9296d9c2e02e9acbb0fe543ad434ea66370baf35
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -55,10 +60,10 @@ jobs:
           push: false
           tags: woow-ha-opendesign:smoke
           build-args: |
-            BUILD_FROM=ghcr.io/nexu-io/od:0.21.1@sha256:441daca881e699657bacf28e0c27b16cd6be551dfff4bd63368dd74bec581f39
+            BUILD_FROM=${{ env.CORE_IMAGE }}
             BUILD_ARCH=amd64
             BUILD_VERSION=0.1.0-smoke
-            BUILD_DESCRIPTION=OpenDesign 0.21.1 container smoke
+            BUILD_DESCRIPTION=OpenDesign 0.24.1 core container smoke
             BUILD_NAME=Woow HA OpenDesign
             BUILD_REF=${{ github.sha }}
             BUILD_REPOSITORY=${{ github.repository }}
@@ -79,8 +84,6 @@ jobs:
         include:
           - arch: amd64
             platform: linux/amd64
-          - arch: aarch64
-            platform: linux/arm64
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -102,11 +105,11 @@ jobs:
           provenance: false
           tags: ghcr.io/woowtech/woow-ha-opendesign-${{ matrix.arch }}:${{ steps.metadata.outputs.version }}
           build-args: |
-            BUILD_FROM=ghcr.io/nexu-io/od:0.21.1@sha256:441daca881e699657bacf28e0c27b16cd6be551dfff4bd63368dd74bec581f39
+            BUILD_FROM=${{ env.CORE_IMAGE }}
             BUILD_ARCH=${{ matrix.arch }}
             BUILD_VERSION=${{ steps.metadata.outputs.version }}
             BUILD_DATE=${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
-            BUILD_DESCRIPTION=OpenDesign 0.21.1 for Home Assistant Ingress
+            BUILD_DESCRIPTION=OpenDesign 0.24.1 (WoowTech core) for Home Assistant Ingress
             BUILD_NAME=Woow HA OpenDesign
             BUILD_REF=${{ github.sha }}
             BUILD_REPOSITORY=${{ github.repository }}
@@ -119,8 +122,8 @@ jobs:
             ghcr.io/woowtech/woow-ha-opendesign-${{ matrix.arch }}:${{ steps.metadata.outputs.version }} \
             -ceu '
               test "$(id -u)" = 1001
-              test "$(opencode --version)" = 1.18.29
-              test "$(command -v opencode)" = /opt/ha-opendesign/opencode/node_modules/.bin/opencode
+              test "$(opencode --version)" = 1.18.33
+              test "$(command -v opencode)" = /usr/local/bin/opencode
               claude --version | grep -Fq 2.1.296
               codex --version | grep -Fq 0.162.1
               pi --version | grep -Fq 1.1.0
@@ -161,8 +164,6 @@ jobs:
         include:
           - arch: amd64
             platform: linux/amd64
-          - arch: aarch64
-            platform: linux/arm64
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -184,11 +185,11 @@ jobs:
           provenance: false
           tags: woow-ha-opendesign-release-gate-${{ matrix.arch }}:${{ steps.metadata.outputs.version }}
           build-args: |
-            BUILD_FROM=ghcr.io/nexu-io/od:0.21.1@sha256:441daca881e699657bacf28e0c27b16cd6be551dfff4bd63368dd74bec581f39
+            BUILD_FROM=${{ env.CORE_IMAGE }}
             BUILD_ARCH=${{ matrix.arch }}
             BUILD_VERSION=${{ steps.metadata.outputs.version }}
             BUILD_DATE=${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
-            BUILD_DESCRIPTION=OpenDesign 0.21.1 for Home Assistant Ingress
+            BUILD_DESCRIPTION=OpenDesign 0.24.1 (WoowTech core) for Home Assistant Ingress
             BUILD_NAME=Woow HA OpenDesign
             BUILD_REF=${{ github.sha }}
             BUILD_REPOSITORY=${{ github.repository }}
@@ -233,8 +234,8 @@ jobs:
 
           docker exec --user 1001:1001 "$container" sh -ceu '
             test "$(id -u)" = 1001
-            test "$(opencode --version)" = 1.18.29
-            test "$(command -v opencode)" = /opt/ha-opendesign/opencode/node_modules/.bin/opencode
+            test "$(opencode --version)" = 1.18.33
+            test "$(command -v opencode)" = /usr/local/bin/opencode
             claude --version | grep -Fq 2.1.296
             codex --version | grep -Fq 0.162.1
             pi --version | grep -Fq 1.1.0
@@ -274,8 +275,6 @@ jobs:
         include:
           - arch: amd64
             platform: linux/amd64
-          - arch: aarch64
-            platform: linux/arm64
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -302,11 +301,11 @@ jobs:
           provenance: false
           tags: ghcr.io/woowtech/woow-ha-opendesign-${{ matrix.arch }}:${{ steps.metadata.outputs.version }}
           build-args: |
-            BUILD_FROM=ghcr.io/nexu-io/od:0.21.1@sha256:441daca881e699657bacf28e0c27b16cd6be551dfff4bd63368dd74bec581f39
+            BUILD_FROM=${{ env.CORE_IMAGE }}
             BUILD_ARCH=${{ matrix.arch }}
             BUILD_VERSION=${{ steps.metadata.outputs.version }}
             BUILD_DATE=${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
-            BUILD_DESCRIPTION=OpenDesign 0.21.1 for Home Assistant Ingress
+            BUILD_DESCRIPTION=OpenDesign 0.24.1 (WoowTech core) for Home Assistant Ingress
             BUILD_NAME=Woow HA OpenDesign
             BUILD_REF=${{ github.sha }}
             BUILD_REPOSITORY=${{ github.repository }}
