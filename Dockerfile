@@ -7,16 +7,15 @@
 # built-in Woow OpenDesign MCP server (mcp-runtime/).
 #
 # 0.2.1 removed Omnigent from the add-on (until Omnigent is stable). The pinned
-# core still ships it (omnigent CLI, omnigent-host-entry, the woow-omnigent
-# plugin and skill): this layer deletes the plugin and the skill so OpenDesign
-# offers neither, and never runs omnigent-host-entry or an Omnigent host. A core
-# without Omnigent only needs the pin bumped (.github/scripts/pin-core.sh).
+# core (20261015.0617, fork w2.2) is built with OMNIGENT=off: no omnigent CLI,
+# no omnigent-host-entry, no bundled woow-omnigent plugin or skill. The removal
+# step below stays as a guard so an older core can never bring them back.
 #
 # The core is published as the public ghcr.io/woowtech/open-design-core,
-# copied from the PaaS registry by digest (paas-odoo-ci #325, approval #328:
-# OpenDesign 0.24.1 from fork woow-od-v0.24.1-w2.1 = ba3a448). Bump = change the
-# tag and digest together here, in .github/workflows/build.yml and build.yaml.
-ARG BUILD_FROM=ghcr.io/woowtech/open-design-core:20261014.1921@sha256:bfec7cc6c96b559506f33dce9296d9c2e02e9acbb0fe543ad434ea66370baf35
+# copied from the PaaS registry by digest (paas-odoo-ci #332, approval #334:
+# OpenDesign 0.24.1 from fork woow-od-v0.24.1-w2.2 = 1c7e697). Bump with
+# .github/scripts/pin-core.sh <tag> <digest> (rewrites every pin).
+ARG BUILD_FROM=ghcr.io/woowtech/open-design-core:20261015.0617@sha256:c5496453136b5ddc1ec3376c0f7518bfb2ba5091ff1ba75bfadf645d1c52a683
 
 # --- Built-in Woow OpenDesign MCP server: admin UI assets (mcp-runtime/, see mcp-runtime/README.md) ---
 # Built with the core image's own Node/npm from the vendored, lock-pinned UI sources; only dist/ is kept.

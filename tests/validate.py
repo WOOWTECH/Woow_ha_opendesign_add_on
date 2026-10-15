@@ -44,8 +44,8 @@ check(config.get("image") == "ghcr.io/woowtech/woow-ha-opendesign-{arch}", "arch
 # The add-on derives from the shared WoowTech OpenDesign core image. Every build
 # input names the same published core (digest for CI/Dockerfile, its immutable
 # tag for Supervisor local builds), so no build can fall back to upstream OpenDesign.
-core_image = "ghcr.io/woowtech/open-design-core:20261014.1921@sha256:bfec7cc6c96b559506f33dce9296d9c2e02e9acbb0fe543ad434ea66370baf35"
-local_core_image = "ghcr.io/woowtech/open-design-core:20261014.1921"
+core_image = "ghcr.io/woowtech/open-design-core:20261015.0617@sha256:c5496453136b5ddc1ec3376c0f7518bfb2ba5091ff1ba75bfadf645d1c52a683"
+local_core_image = "ghcr.io/woowtech/open-design-core:20261015.0617"
 check(build.get("build_from") == {"amd64": local_core_image}, "Supervisor local builds must use the core image (tag syntax, amd64 only)")
 check("nexu-io/od" not in (ROOT / "build.yaml").read_text(), "build.yaml must not fall back to the upstream OpenDesign image")
 check(package.get("dependencies") == {"playwright-core": "1.55.0"}, "renderer dependency must remain exactly pinned")

@@ -13,7 +13,7 @@ permissions:
 env:
   # Shared WoowTech OpenDesign core image (PaaS open-design image), published as
   # the public ghcr.io/woowtech/open-design-core, pinned by digest (same as Dockerfile).
-  CORE_IMAGE: ghcr.io/woowtech/open-design-core:20261014.1921@sha256:bfec7cc6c96b559506f33dce9296d9c2e02e9acbb0fe543ad434ea66370baf35
+  CORE_IMAGE: ghcr.io/woowtech/open-design-core:20261015.0617@sha256:c5496453136b5ddc1ec3376c0f7518bfb2ba5091ff1ba75bfadf645d1c52a683
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

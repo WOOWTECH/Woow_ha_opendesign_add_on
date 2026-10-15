@@ -10,7 +10,7 @@ const [dockerfile, smoke, workflow, launcher, build] = await Promise.all([
   readFile(new URL('rootfs/usr/local/bin/ha-opendesign', root), 'utf8'),
   readFile(new URL('build.yaml', root), 'utf8'),
 ]);
-const coreImage = 'ghcr.io/woowtech/open-design-core:20261014.1921@sha256:bfec7cc6c96b559506f33dce9296d9c2e02e9acbb0fe543ad434ea66370baf35';
+const coreImage = 'ghcr.io/woowtech/open-design-core:20261015.0617@sha256:c5496453136b5ddc1ec3376c0f7518bfb2ba5091ff1ba75bfadf645d1c52a683';
 
 test('the add-on derives from the WoowTech core image, never upstream OpenDesign', () => {
   assert.match(dockerfile, new RegExp(`^ARG BUILD_FROM=${coreImage.replace(/[.]/g, '\\.')}$`, 'm'));
