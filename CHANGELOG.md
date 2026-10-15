@@ -1,6 +1,12 @@
 # Changelog
 
-## 0.2.0 (draft, unreleased)
+## 0.2.0
+
+**Upgrading from 0.1.x — please read:**
+
+- After updating, open the add-on's **Info** tab and turn on **Watchdog**. Home Assistant leaves it off; without it the add-on stays stopped if one of its internal processes exits (with it on, it is back in about 11 seconds).
+- The OpenDesign MCP server is now built in. If you used the separate *Woow OpenDesign MCP Server* add-on, open **MCP Server** at the bottom right of the OpenDesign page, create a token, update your MCP client with the new URL/token (LAN port `8081/tcp` is unmapped by default; Claude.ai uses the `/private_<token>/mcp` URL), then uninstall the old add-on. It no longer receives updates.
+- Only amd64 is supported from this release.
 
 - **Built on the shared WoowTech OpenDesign core image** instead of upstream `ghcr.io/nexu-io/od:0.21.1`: OpenDesign 0.24.1 from the WoowTech fork, the same build the WOOW PaaS runs, with its white-label, zh-TW locale and export patches, the bundled `woowtech-brand` skill and `woow-omnigent` plugin, and no `brainstorming` skill. The Dockerfile default is an all-zero placeholder digest of `ghcr.io/woowtech/open-design-core` until the core is published; builds pass `BUILD_FROM`.
 - Agent CLIs now come from the core: Claude Code `2.1.296`, Codex CLI `0.162.1`, Pi `1.1.0` and OpenCode `1.18.33` (was the add-on's own OpenCode `1.18.29`). The build asserts every version as UID 1001 and fails on a different core.
