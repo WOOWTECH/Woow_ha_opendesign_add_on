@@ -13,7 +13,7 @@
 - OpenDesign 旁邊執行 **Omnigent host**（WOOW 共用 `omnigent-host` 套件）：平時只等待登入；在 OpenDesign **Plugins → Omnigent** 對話框（或 CLI Terminal 執行 `omnigent login <伺服器網址>`）連線後，這個附加元件就會成為 Omnigent 的一台機器。
 - 透過 OpenDesign 原生 **Plugins** 頁面安裝的插件與 Skills，會由同一個 daemon 提供給 Claude Code、Codex、Pi、OpenCode 的專案執行流程。
 - OpenDesign 頁面提供受 HA Ingress 保護的 **CLI Terminal**，可在 GUI 中完成 Claude Code、Codex、Pi 的互動登入。OpenCode 更多 API provider 可在 **Settings → API providers** 設定。
-- **內建 OpenDesign MCP server**（取代另一支「Woow OpenDesign MCP Server」附加元件）：MCP 用戶端連 `8081/tcp`＋Bearer token，Claude.ai 連接器用 `/private_<token>/mcp`。管理頁（token、工具權限）是 OpenDesign 頁面右下角 **CLI Terminal** 旁的 **MCP Server**，只能經 HA Ingress 進入。詳見 [DOCS.md](DOCS.md#built-in-mcp-server)。
+- **內建 OpenDesign MCP server**（取代另一支「Woow OpenDesign MCP Server」附加元件）：MCP 用戶端連 `8081/tcp`＋Bearer token，Claude.ai 連接器用 `/private_<token>/mcp`。工具與 WOOW PaaS 的 OpenDesign MCP 相同共 15 支，預設全開，包含寫入工具 `create_project`、`send_message`（會執行 OpenDesign agent）與 `delete_project`。管理頁（token、工具權限）是 OpenDesign 頁面右下角 **CLI Terminal** 旁的 **MCP Server**，只能經 HA Ingress 進入。詳見 [DOCS.md](DOCS.md#built-in-mcp-server)。
 
 [English](README.md) · [附加元件說明](DOCS.md)
 

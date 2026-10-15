@@ -4,8 +4,11 @@ cd "$(dirname "$0")/.."
 
 python3 tests/validate.py
 python3 mcp-runtime/tests/verify_vendor.py
+python3 -B mcp-runtime/tests/unit/test_od_rules.py
 sh -n mcp-runtime/install.sh
+sh -n mcp-runtime/tests/unit/run.sh
 bash -n mcp-runtime/tests/e2e/run-proof.sh
+bash -n mcp-runtime/tests/e2e/run-upgrade-proof.sh
 python3 tests/workflow-policy.test.py
 python3 tests/sign-in-hint.test.py
 python3 tests/import-core-policy.test.py
