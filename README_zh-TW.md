@@ -21,7 +21,7 @@
 
 1. 在 Home Assistant 開啟 **設定 → 附加元件 → 附加元件商店 → 儲存庫**。
 2. 加入 `https://github.com/WOOWTECH/Woow_ha_opendesign_add_on`。
-3. 安裝並啟動 **Woow HA OpenDesign**，再從側邊欄開啟。
+3. 安裝 **Woow HA OpenDesign**，在「資訊」頁籤打開 **Watchdog**（Home Assistant 新裝的附加元件預設是關的；沒開時內部程序一結束，附加元件就會停著不會自己回來），再啟動並從側邊欄開啟。
 4. 在 **設定** 設定 API BYOK 的供應商、模型與金鑰；設定只會保留在該瀏覽器。
 5. 開啟 **Local AI → Rescan** 重新掃描已預裝的 CLI。接著進入 **Plugins** 安裝工作流程，再於專案中選取；OpenDesign 會將所選 Skill stage 到專案並交給當次選用的代理。
 6. 點擊 OpenDesign 頁面上的 **CLI Terminal**，在終端執行 `claude` 後輸入 `/login`、`codex login --device-auth`，或執行 `pi` 後在 TUI 輸入 `/login`。登入狀態保存在 `/data/opendesign/home`。OpenCode API 供應商可在 **Settings → API providers** 設定。
@@ -42,7 +42,7 @@ OpenDesign ↔ omnigent-host supervisor → `omnigent host`（登入後主動連
 
 nginx 先驗證 `X-Ingress-Path`，改寫初始回應中的根路徑 URL，並在應用程式碼之前注入 shim，以處理 fetch、XHR、EventSource、WebSocket、history、worker、動態資源 URL 與 web 模式的匯出缺口。HA Ingress 的 PDF 操作會改走可下載的截圖 PDF 二進位端點，PNG/JPEG 儲存則直接呼叫 daemon 的無頭 image 端點。SSE／WebSocket 不緩衝，且對上游停用壓縮以便安全改寫。
 
-root PID 1 啟動器先準備 Home Assistant 以 root 掛載的 `/data`，安全移除已撤回的 `/data/opendesign/credentials` 舊路徑且不追蹤 symbolic link，再透過 `su-exec` 讓 nginx、OpenDesign（經 omnigent-host 套件 launcher 啟動，同時執行 Omnigent supervisor）與 loopback ttyd 以 UID/GID 1001 執行；任一程序退出時會停止其他程序並讓 Supervisor 一起重新啟動。關閉時先送 TERM、最多等待五秒，再送 KILL 並回收程序。nginx PID 與暫存目錄位於 `/tmp`。
+root PID 1 啟動器先準備 Home Assistant 以 root 掛載的 `/data`，安全移除已撤回的 `/data/opendesign/credentials` 舊路徑且不追蹤 symbolic link，再透過 `su-exec` 讓 nginx、OpenDesign（經 omnigent-host 套件 launcher 啟動，同時執行 Omnigent supervisor）與 loopback ttyd 以 UID/GID 1001 執行；任一程序退出時會停止其他程序並結束，由 Supervisor 一起重新啟動（須打開 **Watchdog**；實測約 11 秒恢復，沒開時附加元件會停在 `error`）。關閉時先送 TERM、最多等待五秒，再送 KILL 並回收程序。nginx PID 與暫存目錄位於 `/tmp`。
 
 ## 驗證
 

@@ -63,5 +63,5 @@ The add-on carries the shared WOOW `omnigent-host` kit (byte-identical to `woow-
 - **Key disappeared:** browser-local API BYOK settings are intentionally not backed up or shared. Re-enter them in Settings.
 - **Editable PPTX fails:** expected. Choose the screenshot/image PPTX mode.
 - **Image/PDF export says renderer failed:** check logs for Chromium errors and reduce page dimensions/length.
-- **Watchdog restart:** if nginx, OpenDesign, the terminal or the built-in MCP server exits, the launcher deliberately stops the others and exits so Supervisor can restart them together.
+- **Watchdog restart:** if nginx, OpenDesign, the terminal or the built-in MCP server exits, the launcher deliberately stops the others and exits so Supervisor can restart them together. Supervisor does this only when **Watchdog** is on (add-on **Info** tab); Home Assistant leaves it off for newly installed add-ons. With Watchdog off the add-on stays in `error` until you start it again.
 - **MCP client gets 401:** the token was rotated or revoked; copy the current one from **MCP Server**. A browser-style request with an `Origin` header to `/mcp` is refused (403) by design; Claude.ai uses the `/private_<token>/mcp` URL instead.
