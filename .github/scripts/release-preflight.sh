@@ -3,15 +3,16 @@ set -Eeuo pipefail
 
 cd "$(dirname "$0")/../.."
 
-if [[ "${GITHUB_REF_TYPE:-}" != "tag" ]]; then
-  echo "Release preflight may only run for a tag ref" >&2
+# A release is a merged version bump: only main may publish, never a tag or
+# another branch (a pushed tag would skip the pull request checks).
+if [[ "${GITHUB_REF:-}" != "refs/heads/main" ]]; then
+  echo "Release preflight may only run on refs/heads/main, not ${GITHUB_REF:-<unset>}" >&2
   exit 1
 fi
 
 version=$(awk -F'"' '/^version:/ { print $2 }' config.yaml)
-expected="v${version}"
-if [[ -z "$version" || "${GITHUB_REF_NAME:-}" != "$expected" ]]; then
-  echo "Release tag ${GITHUB_REF_NAME:-<unset>} does not match config.yaml version ${expected}" >&2
+if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "config.yaml version '${version}' is not x.y.z; refusing to publish" >&2
   exit 1
 fi
 
