@@ -14,5 +14,6 @@ child=${2:?child python}
 export PYTHONDONTWRITEBYTECODE=1
 "$mgmt" -B -W ignore "$here/test_od_rules.py"
 "$mgmt" -B -W ignore "$here/test_surface.py"
+"$mgmt" -B -W ignore "$here/test_management.py"
 "$child" -B -W ignore "$here/test_od_tools.py"
 echo "HA overlay unit tests passed"
