@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
 CODE = os.environ.get('HA_OD_MCP_CODE', str(HERE.parents[1]))
@@ -41,7 +42,7 @@ class Management(unittest.IsolatedAsyncioTestCase):
                         'jsonrpc': '2.0', 'id': message['id'], 'result': result})
                 async with httpx.AsyncClient(transport=httpx.MockTransport(reply)) as child:
                     admin, _ = make_apps(store, TOOLS['opendesign'], child, verify_admin=runtime.ingress_user,
-                        management=ManagementOptions(kind='builtin', authority='ha-ingress', backend_mode='fixed', backend_can_edit=False))
+                        management=runtime.management_options())
                     wrapped = runtime.IngressSocketPeer(admin)
                     async with httpx.AsyncClient(transport=httpx.ASGITransport(wrapped, client=None), base_url='http://builtin') as client:
                         identity = {'x-remote-user-id': 'a'*32}
@@ -49,6 +50,8 @@ class Management(unittest.IsolatedAsyncioTestCase):
                         cap = (await client.get('/api/capabilities', headers=identity)).json()
                         self.assertEqual(cap['admin']['authority'], 'ha-ingress')
                         self.assertEqual(cap['deployment']['kind'], 'builtin')
+                        self.assertEqual(cap['product']['version'], os.environ.get('WOOW_ADDON_VERSION', 'unknown'))
+                        self.assertEqual(cap['product']['runtime_version'], '0.1.14')
                         self.assertFalse(cap['backend']['can_edit'])
                         self.assertEqual(cap['tools']['catalog_count'], 15)
                         self.assertEqual(cap['tools']['effective_count'], 14)

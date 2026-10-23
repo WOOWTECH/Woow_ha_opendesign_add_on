@@ -1,6 +1,6 @@
 {
   "source_repository": "https://github.com/WOOWTECH/Woow_ha_mcp_addons",
-  "source_commit": "5cc17dcccf89588e327ac57f52e171bad62fbfea",
+  "source_commit": "733435a5a81917dd71efb1fdc672666d8874f764",
   "note": "Pinned copy; never edit vendor/ by hand. Re-run vendor.sh and review the diff.",
   "files": {
     "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
@@ -15,7 +15,7 @@
     "docs/provenance/opendesign-upstream-chain.md": "a05996b3d80d3d108e035e399bdbf9cdcae8f75aa42212ca4b024b902674a6aa",
     "packages/mcp-admin-core/mcp_admin_core/__init__.py": "0079846f17dc8a62b9e5dcebf16e5407e6ab805a933fb378b25e0f36d1d6333b",
     "packages/mcp-admin-core/mcp_admin_core/batch2.py": "ba472dcd66a850b9d6b8d2f86682ec5d68b7d7872d0f9be875a230d535ce20fd",
-    "packages/mcp-admin-core/mcp_admin_core/capabilities.py": "8babdb500802f524fea4c0f28e14feac6d2aa787b40f47f5aab0947bf3dfc292",
+    "packages/mcp-admin-core/mcp_admin_core/capabilities.py": "32e3c592f1007fc8e6cbc4f6132a63f839432274e3c725262d4f5d9cc2721a95",
     "packages/mcp-admin-core/mcp_admin_core/config.py": "783c68bfc1a840224698914f0395f6ce8d6d4957697f77af7577a27c3864fc81",
     "packages/mcp-admin-core/mcp_admin_core/diagnostics.py": "1629233b0fe4296670d365e3f4d802afae9a78f1a25abe8a4706a4d6f3995492",
     "packages/mcp-admin-core/mcp_admin_core/expansion.py": "ae2442ef59b99a89f7e4b9459750bde9db854645077e95f3fcad5856fc258ed2",
