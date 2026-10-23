@@ -21,6 +21,7 @@ health monitor and HA admin verifier are the vendored ones. Local differences:
 """
 import asyncio
 import dataclasses
+import os
 from pathlib import Path
 import re
 import signal
@@ -99,6 +100,11 @@ class IngressSocketPeer:
         await self.app({**scope, 'client': INGRESS_PEER}, receive, send)
 
 
+def management_options():
+    return ManagementOptions(kind='builtin', authority='ha-ingress', backend_mode='fixed',
+                             backend_can_edit=False, product_version=os.environ.get('WOOW_ADDON_VERSION', 'unknown'))
+
+
 async def run():
     store = ProductStore(DATA_DIR, PRODUCT)
     manager = None
@@ -128,8 +134,7 @@ async def run():
 
             admin, mcp = make_apps(store, TOOLS[PRODUCT], child,
                                    verify_admin=ingress_user,
-                                   management=ManagementOptions(kind='builtin', authority='ha-ingress',
-                                       backend_mode='fixed', backend_can_edit=False),
+                                   management=management_options(),
                                    backend_check=health.test_saved, restart_child=backend_changed,
                                    diagnostics=manager.diagnostics,
                                    health=health.snapshot, backend_changed=backend_changed,

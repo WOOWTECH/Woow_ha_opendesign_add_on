@@ -21,12 +21,15 @@ class ManagementOptions:
     authority: str = "ha-admin"
     backend_mode: str = "manual"
     backend_can_edit: bool = True
+    product_version: str | None = None
 
     def __post_init__(self):
         if (self.kind not in {"ha-addon", "paas", "builtin"}
                 or self.authority not in {"ha-admin", "ha-ingress", "paas-password"}
                 or self.backend_mode not in {"manual", "fixed"}
                 or type(self.backend_can_edit) is not bool
+                or self.product_version is not None and (not isinstance(self.product_version, str)
+                    or not 0 < len(self.product_version) <= 64 or not self.product_version.isascii())
                 or self.backend_mode == "fixed" and self.backend_can_edit):
             raise ValueError("invalid management options")
 
@@ -120,11 +123,11 @@ def tool_catalog(registry, pinned, observed, state):
         if reason:
             item["reason"] = reason
         if tool is not None and not getattr(tool, "child_schema", False):
+            # Bounded adapters validate against their registry model. A wider
+            # child schema would promise arguments the gateway cannot accept.
             item.update(inputSchema=tool.arguments.model_json_schema(), schema_source="registry")
         elif isinstance(metadata.get("inputSchema"), dict):
             item.update(inputSchema=metadata["inputSchema"], schema_source="child" if name in actual else "pinned")
-        elif tool is not None and not getattr(tool, "child_schema", False):
-            item.update(inputSchema=tool.arguments.model_json_schema(), schema_source="registry")
         if tool is not None:
             item["write"] = tool.write
             item["write_grants"] = tool.grants(name)
@@ -143,7 +146,7 @@ def tool_catalog(registry, pinned, observed, state):
 
 def capability_snapshot(options, state, health, catalog, *, can_test=False, can_restart=False, logs=False):
     return {"schema_version": 1, "deployment": {"kind": options.kind},
-            "product": {"id": getattr(state, "product", "n8n"), "version": VERSION},
+            "product": {"id": getattr(state, "product", "n8n"), "version": options.product_version or VERSION, "runtime_version": VERSION},
             "admin": {"authority": options.authority},
             "backend": {"mode": options.backend_mode, "can_test": can_test, "can_edit": options.backend_can_edit},
             "capabilities": {"tool_schema": True, "effective_tools": True, "operation_policy": True,

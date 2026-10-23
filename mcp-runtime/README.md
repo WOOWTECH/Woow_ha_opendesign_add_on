@@ -50,7 +50,8 @@ child restart, and bounded credential-redacted diagnostics. An unobserved child 
 This vendor pin is a management-only backport on the existing 0.1.14 runtime lineage. The 15-tool overlay, state schema,
 existing disables, explicit write grants, Ingress authority, Unix sockets and fixed daemon address remain in effect.
 It deliberately avoids the standalone 0.2.x migration that grants all tools during a legacy-state upgrade.
-The version in the capability contract identifies the MCP runtime; the add-on version remains in Supervisor.
+The capability contract reports the add-on build version as `product.version` and the compatibility core as
+`product.runtime_version`; an unpackaged runtime without build metadata reports an unknown product version.
 
 The source commit in `VENDOR.json` comes from `feat/builtin-admin-parity-20261023` in the HA MCP source repository.
 Use `vendor.sh` to refresh it; do not hand-edit the vendored copy. `tests/unit/test_management.py` checks this deployment's
