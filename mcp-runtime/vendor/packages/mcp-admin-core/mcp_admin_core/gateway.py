@@ -400,10 +400,10 @@ def make_apps(store: Store, tools, child: httpx.AsyncClient, *,
             if name == "capabilities" and request.method == "GET":
                 before = snapshot().get("child")
                 observed = await observe_tools(child, child_url, state)
-                # A process exit/replacement during observation invalidates the result.
+                await final_role(user)  # the probe awaited work; recheck before disclosure
+                # Include exits/replacements during the final awaited role lookup.
                 if before != snapshot().get("child"):
                     observed = None
-                await final_role(user)  # the probe awaited work; recheck before disclosure
                 return JSONResponse(capabilities(state, tool_catalog(tools, listing, observed, state)), headers=headers)
             if name == "backend/test" and request.method == "POST":
                 if backend_check is None:

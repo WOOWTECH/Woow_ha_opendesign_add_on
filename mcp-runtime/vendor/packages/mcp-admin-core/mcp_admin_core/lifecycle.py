@@ -140,6 +140,10 @@ class Supervisor:
                             try:
                                 async with asyncio.timeout(1):
                                     await asyncio.gather(*readers)
+                            except TimeoutError:
+                                # Escaped descendants can keep pipes open after cleanup.
+                                # Join the readers below, then resume the state machine.
+                                pass
                             finally:
                                 for reader in readers:
                                     reader.cancel()
