@@ -39,3 +39,19 @@ Owner decision 2026-10-15: the same 15 tools as the WOOW PaaS OpenDesign MCP, al
 | `od_rules.py` | both | Stdlib-only rules shared by both sides: secret-name deny-list, path rules, agent id pattern, connector projection, 0.24.1 SSE parser and result projection. |
 
 Gateway protections are unchanged (Bearer / URL secret, strict accepted schemas, error redaction, session and stream limits; no child gets `SUPERVISOR_TOKEN`). The child appends `/opt/woow` to `sys.path` only to import the overlay. Re-vendoring: if a new source commit already defines one of the four tools in the gateway table, `surface.install()` fails the image build so the overlay is reviewed. 0.2.1 also vendors `apps/runtime/output_policy.py` (missing in 0.2.0, which broke `list_runs`).
+
+## Management alignment candidate (2026-10-23)
+
+The built-in service now exposes the same authenticated `/api/capabilities` contract as the standalone HA and PaaS
+management interfaces. It identifies its deployment as `builtin`, authority as `ha-ingress`, and backend as fixed.
+The panel includes tool search, the gateway's accepted schemas, observed effective counts, saved-backend checks,
+child restart, and bounded credential-redacted diagnostics. An unobserved child remains unknown.
+
+This vendor pin is a management-only backport on the existing 0.1.14 runtime lineage. The 15-tool overlay, state schema,
+existing disables, explicit write grants, Ingress authority, Unix sockets and fixed daemon address remain in effect.
+It deliberately avoids the standalone 0.2.x migration that grants all tools during a legacy-state upgrade.
+The version in the capability contract identifies the MCP runtime; the add-on version remains in Supervisor.
+
+The source commit in `VENDOR.json` comes from `feat/builtin-admin-parity-20261023` in the HA MCP source repository.
+Use `vendor.sh` to refresh it; do not hand-edit the vendored copy. `tests/unit/test_management.py` checks this deployment's
+identity, fixed-backend enforcement, accepted tool schemas and preservation of disabled writers through real ASGI routes.

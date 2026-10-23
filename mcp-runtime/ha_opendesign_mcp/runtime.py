@@ -31,6 +31,7 @@ from starlette.responses import JSONResponse
 
 from mcp_admin_core import redact
 from mcp_admin_core.config import ConfigError
+from mcp_admin_core.capabilities import ManagementOptions
 from mcp_admin_core.gateway import make_apps
 from mcp_admin_core.ha_role import valid_user_id
 from mcp_admin_core.health import HealthMonitor
@@ -127,6 +128,10 @@ async def run():
 
             admin, mcp = make_apps(store, TOOLS[PRODUCT], child,
                                    verify_admin=ingress_user,
+                                   management=ManagementOptions(kind='builtin', authority='ha-ingress',
+                                       backend_mode='fixed', backend_can_edit=False),
+                                   backend_check=health.test_saved, restart_child=backend_changed,
+                                   diagnostics=manager.diagnostics,
                                    health=health.snapshot, backend_changed=backend_changed,
                                    server_name='woow-mcp-' + PRODUCT, instructions=INSTRUCTIONS.get(PRODUCT))
             common = dict(proxy_headers=False, access_log=False, log_level='warning', server_header=False,

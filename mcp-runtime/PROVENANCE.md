@@ -13,3 +13,8 @@
 The rest of `vendor/` comes from WOOWTECH/Woow_ha_mcp_addons (see `vendor/LICENSE` and `vendor/THIRD_PARTY_NOTICES.md`).
 
 Since 0.2.1 the add-on replaces four of that server's handlers at run time (`list_connectors`, `read_file`, `create_project`, `send_message`) with HA-owned bounded handlers in `ha_opendesign_mcp/od_tools.py` (see `README.md`); the vendored file itself is not modified. `vendor/apps/runtime/output_policy.py` (used by the vendored `list_runs`) is vendored from the same source commit since 0.2.1.
+
+
+Management alignment 2026-10-23: the VENDOR.json pin is a compatibility branch based on the prior pinned runtime.
+It backports management capabilities, diagnostics, log redaction and UI only; the OpenDesign tool handlers, policy
+and store migrations remain on the reviewed built-in lineage. Local runtime.py wires the fixed-backend hooks.
