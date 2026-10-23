@@ -1,6 +1,6 @@
 {
   "source_repository": "https://github.com/WOOWTECH/Woow_ha_mcp_addons",
-  "source_commit": "733435a5a81917dd71efb1fdc672666d8874f764",
+  "source_commit": "6f420266091085d45657fd2d979631d7177724d1",
   "note": "Pinned copy; never edit vendor/ by hand. Re-run vendor.sh and review the diff.",
   "files": {
     "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
@@ -19,10 +19,10 @@
     "packages/mcp-admin-core/mcp_admin_core/config.py": "783c68bfc1a840224698914f0395f6ce8d6d4957697f77af7577a27c3864fc81",
     "packages/mcp-admin-core/mcp_admin_core/diagnostics.py": "1629233b0fe4296670d365e3f4d802afae9a78f1a25abe8a4706a4d6f3995492",
     "packages/mcp-admin-core/mcp_admin_core/expansion.py": "ae2442ef59b99a89f7e4b9459750bde9db854645077e95f3fcad5856fc258ed2",
-    "packages/mcp-admin-core/mcp_admin_core/gateway.py": "2552c946d8cb871a830ee13ad06c541ab635f3050090ff121251c359ac279c16",
+    "packages/mcp-admin-core/mcp_admin_core/gateway.py": "e205d5c6fdb802367de53c8254e2b97252fdb17af9137d7a3a08440276db6590",
     "packages/mcp-admin-core/mcp_admin_core/ha_role.py": "7fd8264a0f7a72441eda8852e9b67dbb0b57c12a91240d2b957ce6b81efa6d34",
     "packages/mcp-admin-core/mcp_admin_core/health.py": "4888354d9869b80845408f331c3af96bf26e03cd61e7c888029e2f40e9425788",
-    "packages/mcp-admin-core/mcp_admin_core/lifecycle.py": "ae6ad417a8c4c8c2dca69350080af38d0a75be77fc0188e6417ac6e943d6651e",
+    "packages/mcp-admin-core/mcp_admin_core/lifecycle.py": "3d4ad11dbd192c5cf17a2bd85fdb1509687dc31125e4f50d43703256a16ec977",
     "packages/mcp-admin-core/mcp_admin_core/n8n_b3.py": "d02c83060aa2389368f68f50da9724c414b43db3e9c90d027e737cfed88615ba",
     "packages/mcp-admin-core/mcp_admin_core/native_inventory.py": "d1413a789e6e97268efc7bda3718df1a05c71bd85be3bea6fd6a73d39348b186",
     "packages/mcp-admin-core/mcp_admin_core/odoo_b2.py": "2f0712377804864add7a4fe622586ede1280a323cd612eb53dc4b6b30f1a70fb",
