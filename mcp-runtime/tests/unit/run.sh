@@ -1,5 +1,6 @@
 #!/bin/sh
-# Unit tests of the HA overlay (ha_opendesign_mcp: 0.2.1 tool surface, default grants, bounded handlers).
+# Unit tests of the HA overlay (ha_opendesign_mcp: 0.2.1 tool surface, default grants, bounded handlers; 0.2.4
+# management identity and child sessions).
 #
 #   tests/unit/run.sh <management python> <child python>
 #
@@ -16,4 +17,5 @@ export PYTHONDONTWRITEBYTECODE=1
 "$mgmt" -B -W ignore "$here/test_surface.py"
 "$mgmt" -B -W ignore "$here/test_management.py"
 "$child" -B -W ignore "$here/test_od_tools.py"
+"$child" -B -W ignore "$here/test_child_session.py"
 echo "HA overlay unit tests passed"
