@@ -194,7 +194,7 @@ test('nginx exposes ttyd only through the ingress-prefixed /console/ proxy, the 
   assert.doesNotMatch(nginx, /sub_filter '\"\/terminal\//, 'ttyd assets are no longer served under /terminal/');
 });
 
-test('pre-0.2.4 /terminal links redirect to /console/', () => {
+test('pre-0.2.5 /terminal links redirect to /console/', () => {
   assert.match(nginx, /location = \/terminal \{\s*return 302 \$safe_ingress_path\/console\/;/);
   assert.match(nginx, /location \^~ \/terminal\/ \{\s*return 302 \$safe_ingress_path\/console\/;/);
 });

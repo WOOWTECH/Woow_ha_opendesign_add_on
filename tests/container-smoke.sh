@@ -110,7 +110,7 @@ curl -sS -o /dev/null -D "$tmp/terminal-redirect-invalid.txt" \
   -H 'X-Ingress-Path: /not-an-ingress-path' \
   "http://127.0.0.1:${port}/console"
 grep -Fqx "Location: /console/"$'\r' "$tmp/terminal-redirect-invalid.txt"
-# The pre-0.2.4 /terminal/ links (and anything below them) land on /console/.
+# The pre-0.2.5 /terminal/ links (and anything below them) land on /console/.
 for old_path in /terminal /terminal/ /terminal/ws; do
   curl -sS -o /dev/null -D "$tmp/terminal-legacy.txt" \
     -H "X-Ingress-Path: $ingress_prefix" \

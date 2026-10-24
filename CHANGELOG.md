@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.5
+
+- **MCP Server and CLI Terminal are built-in plugins on OpenDesign's Plugins page** (core `20261024.0713`, fork `woow-od-v0.24.1-w2.3`, `605efab`; the same core as the WOOW PaaS OpenDesign, paas-odoo-ci #396, approval #397). In OpenDesign open **Plugins** (外掛 in Traditional Chinese, 插件 in Simplified Chinese): the **Installed** tab starts with **MCP Server** and **CLI Terminal**, marked **Built-in**; **Open** opens the administration page or the terminal in a new tab. They cannot be uninstalled and never enter prompts, @-search or projects. The two buttons that 0.2.0–0.2.4 placed at the bottom right of the OpenDesign page are gone.
+- **The CLI Terminal moves to `/console/`**, the path of the WOOW PaaS build: `<the add-on's Ingress page>/console/`. Links to the old `/terminal`, `/terminal/` and anything below them answer with a redirect to `/console/`. An open terminal tab from before the update must be reopened (its WebSocket path changed).
+- The "agent is not signed in" hint now points at the **CLI Terminal** plugin on the Plugins page (zh-TW, zh-CN and English).
+- Copied to `ghcr.io/woowtech/open-design-core:20261024.0713` (also `0.24.1-w2.3`) by digest `sha256:bdb9febc…`, byte-identical to the PaaS copy. Agent CLIs and tools are unchanged.
+
 ## 0.2.4
 
 **Built-in MCP server: the same management as the standalone HA and PaaS MCP servers** (from #15, Codex's branch `feat/mcp-parity-20261023`; management code vendored from `WOOWTECH/Woow_ha_mcp_addons` `feat/builtin-admin-parity-20261023`, `6f420266`):
