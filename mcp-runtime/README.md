@@ -16,7 +16,7 @@ process (`start_child mcp`); nginx serves `/mcp-admin/`; `config.yaml` declares 
 | `bin/ha-opendesign-mcp` | Root bootstrap started by the add-on launcher; owns `/data/mcp` and `/run/ha-opendesign-mcp`, drops to uid 10001. |
 | `install.sh` | Build-time install (users `mcp` 10001 and `ha-ingress` 1002, venvs, checks). |
 | `tests/verify_vendor.py` | Vendor/lock integrity check (run by `tests/run.sh`). |
-| `tests/unit/` | Overlay unit tests: `test_od_rules.py` (stdlib, run by `tests/run.sh`), `test_surface.py` and `test_management.py` (management venv), `test_od_tools.py` (child venv, fake OpenDesign daemon on loopback) and `test_child_session.py` (child venv: the session limits of the child that `child.setup()` builds, idle expiry, DELETE); `run.sh <mgmt python> <child python>` runs them all, and `install.sh` runs it in the image build. Fixtures are modelled on OpenDesign 0.24.1's measured `/api/chat` events. |
+| `tests/unit/` | Overlay unit tests: `test_od_rules.py` (stdlib, run by `tests/run.sh`), `test_surface.py`, `test_management.py` and `test_bootstrap.py` (management venv: the add-on version the root bootstrap passes on), `test_od_tools.py` (child venv, fake OpenDesign daemon on loopback) and `test_child_session.py` (child venv: the session limits of the child that `child.setup()` builds, idle expiry, DELETE); `run.sh <mgmt python> <child python>` runs them all, and `install.sh` runs it in the image build. Fixtures are modelled on OpenDesign 0.24.1's measured `/api/chat` events. |
 | `tests/e2e/` | Container-level proof of the built add-on image (`run-proof.sh`, fake Supervisor peer, MCP/admin probes, Ingress browser check of the MCP entry, 0.2.1 tools on a real project) and `run-upgrade-proof.sh` (0.2.0 state -> 0.2.1 default grants, once). |
 
 Re-pin to another source commit:
@@ -60,6 +60,9 @@ existing disables, explicit write grants, Ingress authority, Unix sockets and fi
 It deliberately avoids the standalone 0.2.x migration that grants all tools during a legacy-state upgrade.
 The capability contract reports the add-on build version as `product.version` and the compatibility core as
 `product.runtime_version`; an unpackaged runtime without build metadata reports an unknown product version.
+The version is the image's `WOOW_ADDON_VERSION` (Dockerfile); `bin/ha-opendesign-mcp` passes that one value (when it
+has a version's shape) into the management process's otherwise fixed environment (0.2.4; without it every installed
+add-on reported `unknown`), and `tests/container-smoke.sh` reads it back from `/api/capabilities`.
 
 The source commit in `VENDOR.json` comes from `feat/builtin-admin-parity-20261023` in the HA MCP source repository.
 Use `vendor.sh` to refresh it; do not hand-edit the vendored copy. `tests/unit/test_management.py` checks this deployment's
