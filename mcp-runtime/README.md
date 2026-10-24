@@ -71,7 +71,8 @@ identity, fixed-backend enforcement, accepted tool schemas and preservation of d
 ## 0.2.4: MCP Python SDK 1.30.0
 
 The child runs `mcp` 1.30.0 (was 1.28.1; WOOW PaaS security floor, GHSA-84m7-p3x7-pcfv) and both processes run the
-newest releases that fit SDK 1.x (`requirements/lock.sh`), among them `certifi` 2026.10.23 (GHSA-6q48-6c7w-9gw2).
+newest releases that fit SDK 1.x (`requirements/lock.sh`), among them `certifi` 2026.10.23 (GHSA-6q48-6c7w-9gw2);
+websockets stays on the newest 16.x (16.1.1) until the joint round of major updates with the WOOW PaaS.
 Two vendored runtime files are not those of the management commit but of the source repository's SDK 1.30.0 commit
 `0e5f7de5c937d04b6fc29832c4226db1f471c3ea` (branch `deps/mcp-sdk-1.30-n8n-mcp-2.92.1`, `VENDOR.json` `file_sources`),
 byte for byte; the builtin lineage (`6f420266`) has no SDK 1.30.0 review yet:

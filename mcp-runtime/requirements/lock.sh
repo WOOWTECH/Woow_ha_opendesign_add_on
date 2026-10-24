@@ -5,6 +5,8 @@
 # Since 0.2.4 they are the newest releases that fit MCP Python SDK 1.x (mcp<2; 2.x is a separate migration) and the
 # sources the vendored runtime reviewed: httpx 0.28.1 / httpcore 1.0.9 (apps/runtime/backend_policy.py) and the SDK's
 # tool dispatch (apps/runtime/bounded_tools.py); never below the WOOW PaaS floors mcp 1.30.0 and certifi 2026.10.23.
+# Major updates wait for a joint round with the WOOW PaaS and the HA MCP add-ons (owner decision 2026-10-24): websockets
+# stays on the newest 16.x, mcp on 1.x.
 # To raise them: change *.in (find the newest set with a loose `uv pip compile`), run this script, run the unit tests.
 # Hashes cover every published wheel of each pinned version, so amd64 and aarch64 both install.
 set -Eeuo pipefail
