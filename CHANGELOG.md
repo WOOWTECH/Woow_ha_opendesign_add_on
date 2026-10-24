@@ -2,10 +2,10 @@
 
 ## 0.2.5
 
-- **MCP Server and CLI Terminal are built-in plugins on OpenDesign's Plugins page** (core `20261024.0713`, fork `woow-od-v0.24.1-w2.3`, `605efab`; the same core as the WOOW PaaS OpenDesign, paas-odoo-ci #396, approval #397). In OpenDesign open **Plugins** (外掛 in Traditional Chinese, 插件 in Simplified Chinese): the **Installed** tab starts with **MCP Server** and **CLI Terminal**, marked **Built-in**; **Open** opens the administration page or the terminal in a new tab. They cannot be uninstalled and never enter prompts, @-search or projects. The two buttons that 0.2.0–0.2.4 placed at the bottom right of the OpenDesign page are gone.
+- **MCP Server and CLI Terminal are built-in plugins on OpenDesign's Plugins page** (core `20261024.0943`, fork `woow-od-v0.24.1-w2.4`, `b8a1371`; the same core as the WOOW PaaS OpenDesign, paas-odoo-ci #396 and #398, approval #401). In OpenDesign open **Plugins** (外掛 in Traditional Chinese, 插件 in Simplified Chinese): **MCP Server** and **CLI Terminal**, marked **Built-in**, lead both the default **Official** tab and the **Installed** tab (the tabs now read 官方／團隊／已安裝 in Traditional Chinese); **Open** opens the administration page or the terminal in a new tab. They cannot be uninstalled and never enter prompts, @-search or projects. The two buttons that 0.2.0–0.2.4 placed at the bottom right of the OpenDesign page are gone.
 - **The CLI Terminal moves to `/console/`**, the path of the WOOW PaaS build: `<the add-on's Ingress page>/console/`. Links to the old `/terminal`, `/terminal/` and anything below them answer with a redirect to `/console/`. An open terminal tab from before the update must be reopened (its WebSocket path changed).
 - The "agent is not signed in" hint now points at the **CLI Terminal** plugin on the Plugins page (zh-TW, zh-CN and English).
-- Copied to `ghcr.io/woowtech/open-design-core:20261024.0713` (also `0.24.1-w2.3`) by digest `sha256:bdb9febc…`, byte-identical to the PaaS copy. Agent CLIs and tools are unchanged.
+- Copied to `ghcr.io/woowtech/open-design-core:20261024.0943` (also `0.24.1-w2.4`) by digest `sha256:ffbb2bd0…`, byte-identical to the PaaS copy. Agent CLIs and tools are unchanged.
 
 ## 0.2.4
 

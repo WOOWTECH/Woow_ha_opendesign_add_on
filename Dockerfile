@@ -15,7 +15,7 @@
 # copied from the PaaS registry by digest (paas-odoo-ci #359, approval #372:
 # OpenDesign 0.24.1 from fork woow-od-v0.24.1-w2.2 = 1c7e697). Bump with
 # .github/scripts/pin-core.sh <tag> <digest> (rewrites every pin).
-ARG BUILD_FROM=ghcr.io/woowtech/open-design-core:20261024.0713@sha256:bdb9febc456e48ee264ba506192b5d6553b65d9aadb132a45703b42af23b5aa8
+ARG BUILD_FROM=ghcr.io/woowtech/open-design-core:20261024.0943@sha256:ffbb2bd070c488d79d960ee72fb7717f43791af6a4ae1585943598ad444a76e0
 
 # --- Built-in Woow OpenDesign MCP server: admin UI assets (mcp-runtime/, see mcp-runtime/README.md) ---
 # Built with the core image's own Node/npm from the vendored, lock-pinned UI sources; only dist/ is kept.

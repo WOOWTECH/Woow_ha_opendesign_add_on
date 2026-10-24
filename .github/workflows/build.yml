@@ -12,7 +12,7 @@ permissions:
 env:
   # Shared WoowTech OpenDesign core image (PaaS open-design image), published as
   # the public ghcr.io/woowtech/open-design-core, pinned by digest (same as Dockerfile).
-  CORE_IMAGE: ghcr.io/woowtech/open-design-core:20261024.0713@sha256:bdb9febc456e48ee264ba506192b5d6553b65d9aadb132a45703b42af23b5aa8
+  CORE_IMAGE: ghcr.io/woowtech/open-design-core:20261024.0943@sha256:ffbb2bd070c488d79d960ee72fb7717f43791af6a4ae1585943598ad444a76e0
 
 # A newer push may cancel a pull request run, never a main run: that one may be
 # publishing a release.
