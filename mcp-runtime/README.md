@@ -11,7 +11,7 @@ process (`start_child mcp`); nginx serves `/mcp-admin/`; `config.yaml` declares 
 | `VENDOR.json` | Source commit and sha256 of every vendored file; `file_sources` lists the files taken from another commit of the same repository (0.2.6: `apps/runtime/backend_policy.py`, below). |
 | `PROVENANCE.md` | Origin and license of the vendored OpenDesign MCP server (WoowTech Gitea `woow-mcp-server`). |
 | `vendor.sh` | Re-vendor from a local clone at a full commit sha; `<vendored file>=<full sha>` arguments take single files from another commit. |
-| `requirements/` | Hash-pinned wheels for the base image's Python. Until 0.2.3 the versions of the source `uv.lock` files; 0.2.4-0.2.5 the newest releases that fit MCP Python SDK 1.x; since 0.2.6 MCP Python SDK 2.3.0 and the newest releases of the rest within the vendored runtime's reviewed sources (`lock.sh` explains). `lock.sh` regenerates. |
+| `requirements/` | Hash-pinned wheels for the base image's Python. Until 0.2.3 the versions of the source `uv.lock` files; 0.2.4-0.2.5 the newest releases that fit MCP Python SDK 1.x; since 0.2.6 MCP Python SDK 2.3.0, the rest at their newest releases within the vendored runtime's reviewed sources, starlette and sse-starlette in step with the WOOW PaaS and the HA MCP add-ons 0.4.0 (`lock.sh` explains). `lock.sh` regenerates. |
 | `ha_opendesign_mcp/` | Local glue: fixed loopback backend, Unix sockets for admin and child, runtime entry, the 0.2.1 tool overlay and (0.2.6) the schema 3 state (below). |
 | `bin/ha-opendesign-mcp` | Root bootstrap started by the add-on launcher; owns `/data/mcp` and `/run/ha-opendesign-mcp`, drops to uid 10001. |
 | `install.sh` | Build-time install (users `mcp` 10001 and `ha-ingress` 1002, venvs, checks). |
