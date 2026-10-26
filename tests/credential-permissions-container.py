@@ -1,5 +1,6 @@
 """Disposable image fixture: synthetic archive restore, real startup and UIDs."""
 import io
+import json
 import os
 from pathlib import Path
 import pwd
@@ -62,7 +63,14 @@ elif sys.argv[1] == 'verify':
     changed = []
     for name, content in FILES.items():
         p = HOME / name
-        if p.read_bytes() != content:
+        if name == '.config/opencode/opencode.json':
+            # shared-agents.mjs adds the managed MCP entries on every start;
+            # the user's provider settings must survive that merge.
+            actual = json.loads(p.read_bytes())
+            expected = json.loads(content)
+            assert actual.get('provider') == expected['provider'], 'OpenCode provider settings changed'
+            assert isinstance(actual.get('mcp'), dict), 'shared OpenCode MCP entries missing'
+        elif p.read_bytes() != content:
             changed.append(name)
         assert stat.S_IMODE(p.stat().st_mode) == 0o600, 'credential mode not private'
         assert (p.stat().st_uid, p.stat().st_gid) == (1001, 1001)
@@ -110,6 +118,6 @@ for name in sys.argv[private_end:]:
     for command in [['codex', 'login', 'status'], ['claude', '--version'], ['pi', '--version'], ['opencode', '--version']]:
         result = subprocess.run(['su-exec', 'open-design:open-design', *command], capture_output=True, timeout=30)
         assert result.returncode == 0, 'native CLI credential/home probe failed: ' + command[0]
-    print('credential startup PASS: archive bytes retained, four providers 0600/0700, UID1001 usable; nginx/MCP denied; shared paths readable')
+    print('credential startup PASS: auth bytes retained, OpenCode provider settings and MCP merged, four providers 0600/0700, UID1001 usable; nginx/MCP denied; shared paths readable')
 else:
     raise SystemExit('expected seed or verify')

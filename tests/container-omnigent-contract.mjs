@@ -61,6 +61,8 @@ if (process.argv[2] === 'fresh') {
   assert.equal(crossOrigin.code, 403);
   const crossSiteWithoutOrigin = await request('actions', { action: 'enable' }, { 'Sec-Fetch-Site': 'cross-site' });
   assert.equal(crossSiteWithoutOrigin.code, 403, 'cross-site metadata must reject a mutation even without Origin');
+  const olderSameOrigin = await request('actions', { action: 'verify' }, { Origin: base });
+  assert.equal(olderSameOrigin.code, 409, 'same-origin requests without Fetch Metadata must reach the native action');
   fresh(await status());
   const disabled = await action('disable');
   assert.equal(disabled.enabled, false);
