@@ -176,6 +176,16 @@ repair_data_ownership
 prepare_owned_dir /run/ha-opendesign-paseo open-design:ha-ingress
 chmod 2750 /run/ha-opendesign-paseo
 chmod 0700 "$DATA_DIR/paseo"
+# Only a validated native return path and fixed label leave the root launcher.
+# Metadata failure must not prevent startup. This directory is not child-writable.
+prepare_owned_dir /run/ha-opendesign-return root:ha-ingress
+chmod 0750 /run/ha-opendesign-return
+if ! python3 /usr/local/libexec/ha-opendesign-return.py > /run/ha-opendesign-return/back-link.conf 2>/dev/null; then
+  # shellcheck disable=SC2016 # These are nginx variables, not shell variables.
+  printf 'set $ha_return_path "/";\nset $ha_return_label "← 返回 Home Assistant";\n' > /run/ha-opendesign-return/back-link.conf
+fi
+chown root:ha-ingress /run/ha-opendesign-return/back-link.conf
+chmod 0640 /run/ha-opendesign-return/back-link.conf
 # nginx runs as its own UID (ha-ingress): besides the built-in MCP server it is
 # the only process that may open the MCP administration socket, which
 # OpenDesign, its agents and the ttyd shell (UID 1001) cannot.
@@ -192,13 +202,18 @@ done
 retire_omnigent_state
 # Agent CLI config homes (CODEX_HOME etc. below). Codex warns when its home is
 # missing, so create the absent ones. Existing entries are the user's and are
-# left exactly as they are (including symlinks): this never fails startup.
+# not replaced; the private credential check below refuses unsafe links.
 for dir in "$DATA_DIR/home/.claude" "$DATA_DIR/home/.codex" "$DATA_DIR/home/.config" \
   "$DATA_DIR/home/.pi" "$DATA_DIR/home/.pi/agent"; do
   if [[ ! -e "$dir" && ! -L "$dir" && -d "${dir%/*}" && ! -L "${dir%/*}" ]]; then
     mkdir -- "$dir" && chown -h open-design:open-design "$dir"
   fi
 done
+# Native restore can return private CLI files as 0644; ownership repair alone
+# does not restore privacy. Run the narrow descriptor/no-follow policy as the
+# agent UID, before any service starts, without Supervisor credentials.
+/usr/bin/env -u SUPERVISOR_TOKEN -u HASSIO_TOKEN su-exec open-design:open-design \
+  python3 /usr/local/libexec/ha-opendesign-credentials.py
 remove_obsolete_credentials
 
 export OD_DATA_DIR="$DATA_DIR"

@@ -439,13 +439,16 @@ docker rm "$container" >/dev/null
 # (measured on HAOS 18.1: OpenDesign's database came back as root and the
 # daemon failed with SQLITE_READONLY). Reproduce that on the retained volume;
 # the launcher must hand everything back to open-design before OpenDesign starts.
-docker run --rm --platform linux/amd64 -v "$volume:/data" --entrypoint sh "$image" -ceu '
+docker run --rm --platform linux/amd64 -v "$volume:/data" \
+  -v "$PWD/tests/credential-permissions-container.py:/tmp/credential-permissions.py:ro" \
+  --entrypoint sh "$image" -ceu '
   # Disposable fixture: model the sole native backup_exclude subtree. Actual
   # Supervisor backup/uninstall/fresh restore is a separate native HA gate.
   test -d /data/opendesign/paseo/packages/runtime/releases
   rm -rf /data/opendesign/paseo/packages/runtime
   find /data/opendesign -mindepth 1 -exec chown -h 0:0 {} +
   test "$(find /data/opendesign -mindepth 1 -user 0 | wc -l)" -gt 0
+  python3 /tmp/credential-permissions.py seed
 '
 start_container
 wait_for_health
@@ -457,6 +460,8 @@ PY
 docker cp tests/listener-contract.mjs "$container:/tmp/listener-contract.mjs"
 docker cp tests/container-paseo-e2e.mjs "$container:/tmp/container-paseo-e2e.mjs"
 docker exec -u 1001:1001 "$container" node /tmp/container-paseo-e2e.mjs restored
+docker cp tests/credential-permissions-container.py "$container:/tmp/credential-permissions.py"
+docker exec "$container" python3 /tmp/credential-permissions.py verify
 docker logs "$container" >"$tmp/container.log" 2>&1
 grep -Eq '\[ha-opendesign\] returned [0-9]+ path\(s\) under /data/opendesign to open-design' "$tmp/container.log"
 docker exec "$container" sh -ceu '

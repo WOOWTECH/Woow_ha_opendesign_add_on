@@ -2,6 +2,14 @@
 
 ## 0.2.7
 
+- 原生備份還原後，在服務啟動前恢復已知 CLI 憑證／設定檔的 0600 與
+  provider 私有目錄的 0700；不改寫內容、不改專案權限，拒絕不安全的連結。
+
+- Return from Paseo setup to the native Home Assistant OpenDesign app page,
+  avoiding a top-level `/plugins` URL that fails on reload. The installed slug
+  is discovered through a bounded root-only Supervisor self lookup; missing
+  metadata returns to Home Assistant instead. Runtime package bytes are unchanged.
+
 - Cold backups exclude only the reconstructible Paseo `packages/runtime`
   directory through native `backup_exclude`, avoiding runtime binary hardlinks
   that fail Supervisor's streaming restore. Credentials, projects, sessions,

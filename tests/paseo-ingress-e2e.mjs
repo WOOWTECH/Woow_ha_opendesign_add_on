@@ -42,11 +42,18 @@ test('nginx enforces actual Supervisor peer, sanitized context, routes, origins 
   .replace('X-OD-HA-Peer $remote_addr;','X-OD-HA-Peer 172.30.32.2;')
   .replace('/run/ha-opendesign-paseo/bridge.sock',path.join(dir,'bridge.sock'));
  fs.writeFileSync(path.join(dir,'paseo-proxy.conf'),proxy);
+ const returnConfig=path.join(dir,'back-link.conf');
+ fs.writeFileSync(returnConfig,'set $ha_return_path "/app/a1234def_woow_ha_opendesign";\nset $ha_return_label "← 返回 OpenDesign";\n');
+ const setupConfig=fs.readFileSync(path.join(root,'rootfs/etc/nginx/paseo-setup.conf'),'utf8')
+  .replace('/etc/nginx/paseo-proxy.conf',path.join(dir,'paseo-proxy.conf'))
+  .replace('/run/ha-opendesign-return/back-link.conf',returnConfig);
+ fs.writeFileSync(path.join(dir,'paseo-setup.conf'),setupConfig);
  const nginxConfig=fs.readFileSync(path.join(root,'rootfs/etc/nginx/nginx.conf'),'utf8')
   .replace('listen 8099 default_server;',`listen 127.0.0.1:${port} default_server;`)
   .replaceAll('/tmp/ha-opendesign-nginx',path.join(dir,'nginx'))
   .replace('/etc/nginx/mime.types',process.env.NGINX_MIME_TYPES||'/etc/nginx/mime.types')
-  .replaceAll('/etc/nginx/paseo-proxy.conf',path.join(dir,'paseo-proxy.conf'));
+  .replaceAll('/etc/nginx/paseo-proxy.conf',path.join(dir,'paseo-proxy.conf'))
+  .replaceAll('/etc/nginx/paseo-setup.conf',path.join(dir,'paseo-setup.conf'));
  fs.writeFileSync(path.join(dir,'nginx.conf'),nginxConfig);
  const nginx=spawn(process.env.NGINX_BIN||'nginx',['-p',dir+'/', '-e','stderr','-c',path.join(dir,'nginx.conf')],{stdio:['ignore','ignore','pipe']});
  let log='';nginx.stderr.on('data',b=>log+=b);
@@ -62,7 +69,24 @@ test('nginx enforces actual Supervisor peer, sanitized context, routes, origins 
  }
  const setup=await send('/paseo/setup/');assert.equal(setup.status,200,setup.text);
  assert.ok(setup.text.includes(`src="${prefix}/paseo/assets/setup.js"`));
+ assert.ok(setup.text.includes('<a href="/app/a1234def_woow_ha_opendesign" class="back-link">← 返回 OpenDesign</a>'));
+ assert.ok(!setup.text.includes('← 返回外掛'));
  assert.equal(setup.headers['referrer-policy'],'same-origin');assert.match(setup.headers['cache-control'],/no-store/);
+ assert.match(setup.headers['content-security-policy'],/frame-ancestors 'none'/);
+ assert.equal((await send('/paseo/assets/setup.js')).text,fs.readFileSync(path.join(packageRoot,'ui/setup.js'),'utf8'));
+ // A different repository prefix and missing metadata affect only the anchor,
+ // not runtime bytes, CSP, assets or authenticated status/API behavior.
+ for(const [target,label] of [['/app/local_woow_ha_opendesign','← 返回 OpenDesign'],['/','← 返回 Home Assistant']]){
+  fs.writeFileSync(returnConfig,`set $ha_return_path "${target}";\nset $ha_return_label "${label}";\n`);
+  nginx.kill('SIGHUP');
+  const anchor=`<a href="${target}" class="back-link">${label}</a>`;
+  for(let n=0;;n++){
+   const page=await send('/paseo/setup');
+   if(page.text.includes(anchor)){assert.equal(page.status,200);break;}
+   assert.ok(n<100,'nginx did not apply the native return/fallback anchor');
+   await new Promise(r=>setTimeout(r,20));
+  }
+ }
  for(const route of ['/paseo/assets/setup.js','/paseo/assets/setup.css','/api/paseo-bridge'])assert.equal((await send(route)).status,200,route);
  // A sibling container cannot forge the Supervisor peer or authenticated user.
  for(const route of ['/paseo/setup/','/api/paseo-bridge'])assert.equal((await send(route,{...postHeaders,'X-OD-HA-Peer':'172.30.32.2','X-Forwarded-For':'172.30.32.2'},undefined,'127.0.0.2')).status,403);

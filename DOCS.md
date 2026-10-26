@@ -87,6 +87,13 @@ launcher opens a new tab inside this add-on's Home Assistant Ingress prefix.
 Home Assistant login is required. There is no extra admin-role check beyond
 access to this add-on's Ingress, matching the built-in MCP administration policy.
 
+**← 返回 OpenDesign** returns to the native Home Assistant app page; select
+Plugins there to open Paseo again. It does not deep-link into the Plugins page.
+If startup cannot read its own app metadata, the link is instead
+**← 返回 Home Assistant** and opens Home Assistant's root page. Metadata lookup
+is bounded to three seconds, uses no environment proxy or redirects, and never
+passes the Supervisor token or app options to the browser or service children.
+
 On first start, the managed service downloads its pinned Paseo execution
 packages and creates a marked **Paseo 連線初始化** project/conversation. The same
 conversation is reconciled on later starts. This step requires outbound access
@@ -141,3 +148,15 @@ local HTTP Home Assistant and HTTPS; login/pairing links stay external and do
 not receive an Ingress referrer.
 
 Release maintainers: see [the 0.2.7 packaging/release gate](docs/paseo-release.md).
+
+
+### 還原後的 CLI 憑證權限
+
+啟動時會在 UID 1001 下收緊 `.codex/auth.json`、`.codex/config.toml`、
+`.claude/.credentials.json`、`.claude/settings.json`、`.pi/agent/auth.json`、
+`.pi/agent/models.json` 與 `.pi/agent/settings.json` 為 `0600`，並將
+`.codex`、`.claude`、`.pi`、`.pi/agent` 設為 `0700`。檔案內容與專案權限不會改動，
+不存在的設定不會被建立。這補足原生還原可能帶回 `0644` 權限的情況。
+
+這些私有路徑必須是一般目錄與單一 hard link 的一般檔案。遇到 symlink、多重
+hard link 或其他非一般檔案時會拒絕啟動，避免將權限修正套用到外部目標。
