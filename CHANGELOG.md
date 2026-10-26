@@ -2,6 +2,7 @@
 
 ## 0.2.7
 
+- Report successful exit after a requested TERM/INT has stopped all supervised processes. The previous launcher propagated the interrupted wait's 143/130 and Supervisor showed `error` after a successful native stop. Unexpected required-process exits still stop peers and return failure. Cold backup had succeeded; restore failure is not claimed.
 - Add the shared native Paseo launcher and supervised runtime with first-install onboarding, official provider login, model testing and pairing setup through HA Ingress.
 - Persist runtime state and explicit manual stop beneath `/data`; share the existing provider home and preserve OpenDesign projects and other MCP entries through the native per-entry CAS API.
 - Protect setup/API routes behind the actual Supervisor peer and a private Unix socket. Validate authenticated user, origin and Ingress subpath; discard forwarded-header claims. Keep native new-tab launches beneath the Ingress prefix.

@@ -427,6 +427,7 @@ docker exec -u 1001:1001 "$container" node /tmp/container-paseo-e2e.mjs prepare
 # Every process must stop on TERM inside the launcher's grace period, without
 # the KILL fallback.
 docker stop -t 30 "$container" >/dev/null
+test "$(docker inspect -f '{{.State.ExitCode}}' "$container")" = 0
 docker logs "$container" >"$tmp/container.log" 2>&1
 if grep -Fq 'grace; sending KILL' "$tmp/container.log"; then
   echo 'a process ignored TERM and needed the launcher KILL fallback' >&2

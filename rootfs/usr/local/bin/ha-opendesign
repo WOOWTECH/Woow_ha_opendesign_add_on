@@ -258,6 +258,8 @@ set -e
 if (( stopping )); then
   # TERM/INT interrupted the wait; the trap has already stopped every child.
   echo "[ha-opendesign] stop requested (status=$status); all processes stopped" >&2
+  # Supervisor must see an intentional stop, not a failed container (143/130).
+  exit 0
 else
   echo "[ha-opendesign] required process $(child_name "${exited_pid:-}") exited (status=$status); stopping its peers" >&2
   terminate_children
