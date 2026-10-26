@@ -18,10 +18,13 @@ that archive and its source `package-lock.json`, and update both recorded hashes
 and source commit. Run the runtime suite and archive check before accepting a
 new pin. Keep PaaS and HA pins synchronized.
 
-After main supplies the genuinely published public core tag and digest, run
-`.github/scripts/pin-core.sh TAG sha256:DIGEST`; review CLI version contracts and
-remove the pending-core wording in Dockerfile/CHANGELOG. Never replace the pin
-with a placeholder or claim an image build from local static checks.
+The reviewed public core is `20261026.0712` at
+`sha256:366e337dc7ea192526468de33ad3f2f0ce97be3ffba9b8382a0c1d9ab88b1404`,
+from native fork `c8ae3900f9ff5d58f50d11f4055756f6e7f14a25`. Main verified
+anonymous GHCR access and preservation of the promoted JCR manifest digest.
+Future pins use `.github/scripts/pin-core.sh TAG sha256:DIGEST`; review CLI
+contracts and rerun image/HA checks against those exact bytes. Static validation
+is not evidence of a successful image build.
 
 Validation:
 

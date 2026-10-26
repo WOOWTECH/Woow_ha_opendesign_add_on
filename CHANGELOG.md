@@ -6,7 +6,7 @@
 - Persist runtime state and explicit manual stop beneath `/data`; share the existing provider home and preserve OpenDesign projects and other MCP entries through the native per-entry CAS API.
 - Protect setup/API routes behind the actual Supervisor peer and a private Unix socket. Validate authenticated user, origin and Ingress subpath; discard forwarded-header claims. Keep native new-tab launches beneath the Ingress prefix.
 - Increase graceful shutdown to 25 seconds with a 30-second Supervisor timeout. No option, public port, architecture, image name or stored data format is removed. Upgrade from 0.2.6 retains existing data; first Paseo activation needs package-registry access and target-local provider login.
-- Release preparation only until the reviewed w2.5 core digest is pinned and image/real-HA checks pass. The previous core pin is deliberately retained during review and fails the new native-capability build gate.
+- Pins the reviewed w2.5 core `20261026.0712` (`sha256:366e337d…`, native fork `c8ae390`), copied to public GHCR without changing its digest. Candidate image smoke and native HA acceptance remain release gates.
 
 ## 0.2.6
 
