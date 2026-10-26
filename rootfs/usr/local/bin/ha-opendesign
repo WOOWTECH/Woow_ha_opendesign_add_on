@@ -3,7 +3,9 @@ set -Eeuo pipefail
 
 readonly DATA_DIR=/data/opendesign
 readonly NGINX_TMP=/tmp/ha-opendesign-nginx
-readonly SHUTDOWN_GRACE_SECONDS=5
+# Native Omnigent cancellation and host drain are bounded below 30 seconds.
+# Leave a margin before Supervisor's 45-second container stop timeout.
+readonly SHUTDOWN_GRACE_SECONDS=35
 # Supervised children (OpenDesign, nginx, ttyd and the built-in MCP server). Every process started with start_child is required:
 # when any one exits, the launcher stops the others and exits so Supervisor
 # restarts the complete set. Add a process with one more start_child call below.

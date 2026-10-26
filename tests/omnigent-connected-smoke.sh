@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # Real-service acceptance for owned candidates only. Never targets existing
-# containers/HA. Requires a disposable account with the four engines configured.
-# tests/omnigent-connected-smoke.sh <candidate-image> <private-json-file> [upgrade-image]
+# containers/HA. Requires authorized provider files for the disposable runtime.
+# tests/omnigent-connected-smoke.sh <candidate-image> <private-json-file> <private-provider-directory> [upgrade-image]
 set -Eeuo pipefail
 umask 077
 cd "$(dirname "$0")/.."
 image=${1:?candidate image}
 credential_file=${2:?private JSON file with server/username/password}
-upgrade_image=${3:-$image}
+provider_directory=$(realpath "${3:?private provider fixture directory}")
+upgrade_image=${4:-$image}
 credential_file=$(realpath "$credential_file")
+python3 tests/validate-omnigent-provider-fixture.py "$provider_directory"
 python3 - "$credential_file" <<'PY'
 import json, os, stat, sys
 p = sys.argv[1]
@@ -35,12 +37,18 @@ trap cleanup EXIT
 # No log dumps, published ports, host networking or production volume mounts.
 docker volume create "$original_volume" >/dev/null
 docker volume create "$restored_volume" >/dev/null
+# Seed only the reviewed provider files. Omnigent state is deliberately absent;
+# fresh setup must still ask for its server/account/password. These files never
+# enter the candidate image or the source tree.
+docker run --rm --platform linux/amd64 --entrypoint /bin/sh \
+  -v "$original_volume:/data" -v "$provider_directory:/provider-fixture:ro" "$image" -ceu \
+  'mkdir -p /data/opendesign/home; cp -R /provider-fixture/. /data/opendesign/home/; chown -R 1001:1001 /data/opendesign; chmod 0700 /data/opendesign /data/opendesign/home'
 probe() { docker exec "$container" node /tmp/ha-omnigent-connected.mjs "$1"; }
 start() {
   docker run -d --name "$container" --platform linux/amd64 \
     -v "$volume:/data" -v "$credential_file:/run/ha-omnigent-smoke-credentials.json:ro" "$image" >/dev/null
   docker cp tests/container-omnigent-connected.mjs "$container:/tmp/ha-omnigent-connected.mjs"
-  for attempt in $(seq 1 90); do
+  for _attempt in $(seq 1 90); do
     if docker exec "$container" node -e "fetch('http://127.0.0.1:8099/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"; then return; fi
     sleep 1
   done
@@ -51,7 +59,7 @@ stop() {
   # Scan logs inside the still-running container, with private tokens available.
   docker logs "$container" >"$scratch/container.log" 2>&1
   docker exec -i "$container" node /tmp/ha-omnigent-connected.mjs logs <"$scratch/container.log"
-  docker stop -t 10 "$container" >/dev/null
+  docker stop -t 45 "$container" >/dev/null
   docker logs "$container" >"$scratch/container.log" 2>&1
   # Run the same secret scan on shutdown logs without restarting the daemon.
   docker run --rm -i --platform linux/amd64 --entrypoint node \

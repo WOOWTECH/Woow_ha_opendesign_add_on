@@ -8,7 +8,7 @@ import test from 'node:test';
 const launcher = await readFile(new URL('../rootfs/usr/local/bin/ha-opendesign', import.meta.url), 'utf8');
 
 test('launcher bounds TERM shutdown before KILL and reap', () => {
-  assert.match(launcher, /readonly SHUTDOWN_GRACE_SECONDS=5/);
+  assert.match(launcher, /readonly SHUTDOWN_GRACE_SECONDS=35/);
   const term = launcher.indexOf('kill -TERM');
   const deadline = launcher.indexOf('deadline=$((SECONDS + SHUTDOWN_GRACE_SECONDS))');
   const kill = launcher.indexOf('kill -KILL');

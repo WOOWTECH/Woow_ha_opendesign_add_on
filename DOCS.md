@@ -77,10 +77,14 @@ No workflow was dispatched by this packaging patch. After the coordinator receiv
 For authenticated acceptance, the coordinator can run:
 
 ```sh
-./tests/omnigent-connected-smoke.sh <candidate-image> /private/test-login.json [next-candidate-image]
+./tests/omnigent-connected-smoke.sh <candidate-image> /private/test-login.json /private/provider-home [next-candidate-image]
 ```
 
-The file must be mode `0600` with JSON keys `server`, `username`, `password`, for a disposable test account with the four engines configured. The harness creates only its own containers and volumes, mounts the credential file read-only, publishes no ports, prints no raw logs/responses, and removes its local resources afterwards. It performs actual setup through the native API, requires real reply and stopped-session receipts for all four engines, checks one UID-1001 managed host, restarts before polling status (to prove automatic resume), archives cold `/data` and restores it to a separate volume with root ownership, optionally changes to a newer candidate image, then checks disable/re-enable/new login/disconnect and graceful host stop. It can incur model usage and leaves test-account host/session history. This is Docker packaging acceptance; actual HA Supervisor install/Ingress/backup/fresh restore acceptance remains a separate release gate owned by the other release workstream.
+The file must be mode `0600` with JSON keys `server`, `username`, `password`. Supply a third argument: a private directory containing the authorized Claude/Codex login files and Pi/OpenCode provider configuration, in their normal HOME-relative paths. `tests/validate-omnigent-provider-fixture.py` lists the accepted files and rejects symlinks, extra files, public permissions and any legacy Omnigent state. An Omnigent account alone does not configure local engines. The optional upgrade image is the fourth argument.
+
+The harness creates only its own containers and volumes, mounts the credential file read-only, publishes no ports, prints no raw logs/responses, and removes its local resources afterwards. Provider files seed only the disposable HOME; they never enter the image or repository. It performs actual setup through the native API, requires real reply and stopped-session receipts for all four engines, checks one UID-1001 managed host, restarts before polling status (to prove automatic resume), archives cold `/data` and restores it to a separate volume with root ownership, optionally changes to a newer candidate image, then checks disable/re-enable/new login/disconnect and graceful host stop. It can incur model usage and leaves test-account host/session history. This is Docker packaging acceptance; actual HA Supervisor install/Ingress/backup/fresh restore acceptance remains a separate release gate.
+
+The launcher allows 35 seconds for daemon/host cleanup; Supervisor's `timeout: 45` leaves an outer margin before it kills the container. This uses the [standard Supervisor stop timeout](https://contributors.home-assistant.io/apps/reference/configuration/).
 
 The existing **Validate, build, and publish** workflow can be invoked on a coordinator-published **non-main candidate branch**:
 
