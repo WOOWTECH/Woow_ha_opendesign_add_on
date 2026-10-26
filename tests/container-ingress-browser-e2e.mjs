@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import http from 'node:http';
 import { chromium } from 'playwright-core';
+import { checkOmnigentSetup } from './omnigent-browser-contract.mjs';
 
 const prefix = '/api/hassio_ingress/abcdefghijklmnop';
 const upstreamPort = Number(process.env.OD_INGRESS_PORT || 8099);
@@ -163,6 +164,8 @@ try {
   });
   const context = await browser.newContext({ acceptDownloads: true });
   await context.addInitScript(() => {
+    localStorage.setItem('open-design:locale', 'en');
+    localStorage.setItem('open-design:locale-source', 'manual');
     localStorage.setItem('open-design:config', JSON.stringify({ onboardingCompleted: true }));
   });
   const page = await context.newPage();
@@ -228,6 +231,7 @@ try {
   await terminalPage.keyboard.press('Enter');
   await terminalInput;
   await terminalPage.close();
+  await checkOmnigentSetup(pluginsPage, prefix);
   await pluginsPage.close();
   try {
     await page.waitForFunction(
@@ -247,14 +251,7 @@ try {
     console.error(`OpenDesign bootstrap diagnostics: ${JSON.stringify(diagnostics)}`);
     throw error;
   }
-  // 0.2.1 removed Omnigent: without the woow-omnigent plugin the core's native
-  // integration must not open its setup project or connection dialog.
-  const onboarding = await page.waitForURL((url) => url.pathname.startsWith('/projects/'), { timeout: 15_000 })
-    .then(() => true, () => false);
-  assert.equal(onboarding, false, 'no Omnigent setup project may open on first load');
-  assert.equal(await page.getByText('Connect Omnigent', { exact: true }).count(), 0, 'no Omnigent connection dialog');
-  const omnigentText = await page.evaluate(() => (document.body.innerText.match(/[^\n]*omnigent[^\n]*/gi) ?? []).slice(0, 10));
-  console.log(`Omnigent text on the home page: ${JSON.stringify(omnigentText)}`);
+  // Setup is an explicit native plugin action; an unrelated home tab stays home.
   assert.equal(new URL(page.url()).pathname, '/', 'ingress transport prefix must be hidden from OpenDesign route logic');
   // OpenDesign 0.24.1: with the sidebar collapsed the nav-rail buttons sit
   // under the main pane, expanding it re-renders (detaches) them, and two

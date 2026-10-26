@@ -6,15 +6,12 @@
 # root PID-1 launcher, the /data layout, the headless export renderer and the
 # built-in Woow OpenDesign MCP server (mcp-runtime/).
 #
-# 0.2.1 removed Omnigent from the add-on (until Omnigent is stable). The pinned
-# core (20261018.1219, fork w2.2) is built with OMNIGENT=off: no omnigent CLI,
-# no omnigent-host-entry, no bundled woow-omnigent plugin or skill. The removal
-# step below stays as a guard so an older core can never bring them back.
-#
-# The core is published as the public ghcr.io/woowtech/open-design-core,
-# copied from the PaaS registry by digest (paas-odoo-ci #359, approval #372:
-# OpenDesign 0.24.1 from fork woow-od-v0.24.1-w2.2 = 1c7e697). Bump with
-# .github/scripts/pin-core.sh <tag> <digest> (rewrites every pin).
+# Omnigent is managed by the native daemon, including its private host state.
+# PENDING MAIN PIN: the retained 0.2.6 core below does NOT contain the restored
+# integration. The native plugin/SDK contract intentionally rejects that image.
+# The coordinator must supply the immutable core tag/digest and reconcile the
+# parallel native integrations before release; do not select a version here.
+# Re-pin all build inputs with .github/scripts/pin-core.sh <tag> <digest>.
 ARG BUILD_FROM=ghcr.io/woowtech/open-design-core:20261024.0943@sha256:ffbb2bd070c488d79d960ee72fb7717f43791af6a4ae1585943598ad444a76e0
 
 # --- Built-in Woow OpenDesign MCP server: admin UI assets (mcp-runtime/, see mcp-runtime/README.md) ---
@@ -93,16 +90,15 @@ RUN set -eu; \
     fc-list | grep -qi 'Noto Sans CJK'; \
     echo "core contract OK: OpenDesign ${CORE_OPENDESIGN_VERSION}, claude ${CORE_CLAUDE_CODE_VERSION}, codex ${CORE_CODEX_VERSION}, pi ${CORE_PI_VERSION}, opencode ${CORE_OPENCODE_VERSION}"
 
-# Omnigent is not part of the add-on (0.2.1): remove the core's woow-omnigent
-# plugin and skill (no-ops on a core without them) and fail if either remains.
+# Native Omnigent comes from the reviewed core. No external host launcher and
+# no global Omnigent config-home: the service derives its private host directory
+# from OD_DATA_DIR. A stale core must fail here instead of shipping a dead GUI.
 RUN set -eu; \
-    rm -rf /app/plugins/_official/woow/woow-omnigent /app/skills/woow-omnigent; \
-    if [ -d /app/plugins/_official/woow ] && [ -z "$(ls -A /app/plugins/_official/woow)" ]; then \
-      rmdir /app/plugins/_official/woow; \
-    fi; \
-    test ! -e /app/plugins/_official/woow/woow-omnigent; \
-    test ! -e /app/skills/woow-omnigent; \
-    ! grep -rlsF 'woow-omnigent' /app/plugins /app/skills
+    test -f /app/plugins/_official/woow/woow-omnigent/open-design.json; \
+    test -r /app/apps/daemon/dist/integrations/omnigent/adapter.py; \
+    test -r /app/apps/daemon/dist/integrations/omnigent/host-kit/supervisor.sh; \
+    su-exec open-design:open-design /opt/omnigent/venv/bin/python -I -B -c \
+      'import omnigent; from importlib.metadata import version; assert version("omnigent") == "0.16.0"'
 
 # HA wording for the core's white-label "{agent} is not signed in" hint: the
 # add-on's CLI Terminal instead of the PaaS /console/ path. The patch fails the
@@ -162,8 +158,8 @@ LABEL io.hass.name="${BUILD_NAME}" \
 
 # HA mounts /data at runtime as root. PID 1 starts as root only long enough to
 # create/chown owned directories; the launcher drops every application process
-# to the open-design UID/GID 1001 with su-exec. The core's PaaS ENTRYPOINT
-# (tini -- omnigent-host-entry) and CMD (daemon on 7457) are replaced.
+# to the open-design UID/GID 1001 with su-exec. The core's PaaS entrypoint
+# and CMD (daemon on 7457) are replaced; the native daemon owns Omnigent.
 USER root
 WORKDIR /
 ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/ha-opendesign"]

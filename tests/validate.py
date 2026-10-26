@@ -65,7 +65,7 @@ runtime_sources = "\n".join([
     (ROOT / "runtime/package.json").read_text(),
 ])
 
-check(re.search(rf"^ARG BUILD_FROM={re.escape(core_image)}$", dockerfile, re.M), "Dockerfile base must default to the core image placeholder")
+check(re.search(rf"^ARG BUILD_FROM={re.escape(core_image)}$", dockerfile, re.M), "Dockerfile base must match the immutable core pin")
 check("nexu-io/od" not in dockerfile, "Dockerfile must not fall back to the upstream OpenDesign image")
 check("EXPOSE" not in dockerfile, "Dockerfile must not expose a port")
 check("OD_DATA_DIR=/data/opendesign" in dockerfile, "OD_DATA_DIR persistence is missing")
@@ -86,14 +86,11 @@ for setting in ["HA_OPENDESIGN_HOME=", "CLAUDE_CONFIG_DIR=", "CODEX_HOME=", "PI_
 check((ROOT / "rootfs/usr/local/bin/ha-opendesign-agents").exists(), "shared agent status/sync CLI is missing")
 check((ROOT / "tests/shared-agents.test.mjs").exists(), "shared agent integration tests are missing")
 check("paseo" not in dockerfile.lower() and "paseo" not in launcher.lower(), "retired Paseo runtime must not be installed or injected")
-# 0.2.1: Omnigent is removed from the add-on (until it is stable).
-check(not (ROOT / "rootfs/etc/omnigent-host").exists() and not (ROOT / "rootfs/etc/profile.d/omnigent-host.sh").exists(), "the retired omnigent-host kit must not be shipped")
-check("omnigent" not in (ROOT / "rootfs/etc/profile.d/ha-opendesign-cli-help.sh").read_text().lower(), "CLI help must not mention Omnigent")
-check("omnigent-host-launch" not in launcher and "OG_" not in launcher and "OMNIGENT_" not in launcher, "launcher must not run an Omnigent host")
+# The legacy external supervisor remains absent; the native daemon owns Omnigent.
+check(not (ROOT / "rootfs/etc/omnigent-host").exists() and not (ROOT / "rootfs/etc/profile.d/omnigent-host.sh").exists(), "do not reintroduce a second host supervisor")
 check('su-exec open-design:open-design /usr/local/bin/node /opt/ha-opendesign/headless-entry.mjs' in launcher, "OpenDesign must start directly")
-check("retire_omnigent_state" in launcher and 'mv -- "$source" "$target"' in launcher and 'chmod 0700 "$backups"' in launcher and "rm " not in launcher.split("retire_omnigent_state() {")[1].split("\n}\n")[0], "0.2.0 Omnigent state must be moved (never deleted) into a 0700 backup")
-check("rm -rf /app/plugins/_official/woow/woow-omnigent /app/skills/woow-omnigent" in dockerfile and "test ! -e /app/plugins/_official/woow/woow-omnigent" in dockerfile and "test ! -e /app/skills/woow-omnigent" in dockerfile, "the core's woow-omnigent plugin and skill must be removed and checked absent")
-check(not re.search(r"^(ENTRYPOINT|CMD) .*omnigent", dockerfile, re.M) and "OMNIGENT_" not in dockerfile and "/etc/omnigent-host" not in dockerfile, "the image must not run or configure Omnigent")
+check(not re.search(r"^(ENTRYPOINT|CMD) .*omnigent", dockerfile, re.M), "the HA launcher must own PID 1")
+check(not re.search(r"OMNIGENT_(?:CONFIG_HOME|DATA_DIR)=", dockerfile), "native private host state must not be overridden globally")
 check("prepare_owned_dir" in launcher and "chown -h" in launcher, "privileged /data preparation must reject/fail closed on symlinks")
 check("/usr/sbin/nginx -e stderr" in launcher, "unprivileged nginx must use its inherited stderr descriptor under HA procfs")
 apk_block = re.search(r"RUN apk add --no-cache(.*?)&& rm -rf", dockerfile, re.S)

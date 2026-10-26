@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — native Omnigent packaging (pending core pin and release version)
+
+- Restore the bundled native Omnigent plugin by removing the Dockerfile deletion guard. Require its adapter/host assets and preinstalled SDK 0.16.0 from the reviewed core; retain Claude Code, Codex, Pi and OpenCode as the only engines. The OpenDesign daemon owns host startup/shutdown; the legacy external supervisor stays disabled.
+- Stop retiring Omnigent state on each HA boot. New setup uses the daemon-private `/data/opendesign/integrations/omnigent/host` and must ask for URL/username/password in the GUI. Ignore inherited legacy location overrides; neither `home/.omnigent` nor `.backup/omnigent-*` is automatically adopted or deleted. New setup survives restart/upgrade and cold backup restore.
+- Add executable launcher persistence/shutdown tests, native daemon and GUI ingress smoke, and an opt-in real-service candidate harness for four-engine reply/stop, host resume, disable/re-enable/disconnect, cold restore and image upgrade. Preserve existing ingress, terminal, MCP, BYOK and export behavior.
+- **Migration/rollback:** retired users sign in again; already-configured new hosts retain `/data`. Backups contain Omnigent identity/login tokens and legacy archives. Stop the old host before restoring its identity elsewhere; rollback to a release without the integration requires the pre-upgrade backup. No HA option, port, architecture or image name changes.
+- **Not releasable yet:** version stays 0.2.6 and core stays `20261024.0943` (`sha256:ffbb2bd0…`), which does not contain the restored Omnigent integration and intentionally fails the new image contract. Main must supply the immutable core pin, retain parallel Paseo changes after 0.2.7 coordination, select an unused version and run image/actual-HA acceptance before release. Store/Local Download continue through the existing Release synchronization.
+
 ## 0.2.6
 
 **Built-in MCP server on MCP Python SDK 2.3, the runtime of the HA MCP add-ons 0.4.0** (the joint SDK 2 round with the WOOW PaaS, woow-mcp-server #82; vendored from `WOOWTECH/Woow_ha_mcp_addons` `claude-delivery` `40a8e9e7`, release 0.4.0, #22):
