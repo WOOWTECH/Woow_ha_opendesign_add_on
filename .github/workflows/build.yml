@@ -5,6 +5,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      candidate_core_image:
+        description: "Branch candidate only: approved immutable core image (empty uses normal checks)"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -43,6 +49,7 @@ jobs:
         run: ./tests/run.sh
 
   smoke:
+    if: ${{ ! inputs.candidate_core_image }}
     needs: validate
     runs-on: ubuntu-24.04
     permissions:
@@ -74,6 +81,7 @@ jobs:
         run: ./tests/container-smoke.sh woow-ha-opendesign:smoke
 
   build-nonrelease:
+    if: ${{ ! inputs.candidate_core_image }}
     needs: [validate, smoke]
     runs-on: ubuntu-24.04
     permissions:
@@ -134,13 +142,91 @@ jobs:
               test ! -e /opt/ha-opendesign/ha-pi-wrapper.mjs
             '
 
+  # A dispatch on a review branch builds and tests the candidate locally, then
+  # pushes those exact bytes to a unique prerelease tag. No Store Release/tag.
+  publish-candidate:
+    if: github.event_name == 'workflow_dispatch' && inputs.candidate_core_image != '' && github.ref != 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+    env:
+      CANDIDATE_CORE_IMAGE: ${{ inputs.candidate_core_image }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Validate candidate scope and immutable core
+        id: candidate
+        run: python3 .github/scripts/candidate-release.py plan
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Log in to JCR for candidate core read
+        if: startsWith(steps.candidate.outputs.core, 'jcr-prod.woowtech.io/')
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        with:
+          registry: jcr-prod.woowtech.io
+          username: ${{ secrets.JCR_RO_USERNAME }}
+          password: ${{ secrets.JCR_RO_PASSWORD }}
+      - name: Build candidate locally
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          provenance: false
+          tags: ${{ steps.candidate.outputs.image }}
+          build-args: |
+            BUILD_FROM=${{ steps.candidate.outputs.core }}
+            BUILD_ARCH=amd64
+            BUILD_VERSION=${{ steps.candidate.outputs.version }}
+            BUILD_REF=${{ github.sha }}
+            BUILD_REPOSITORY=${{ github.repository }}
+          cache-from: type=gha,scope=opendesign-amd64
+          cache-to: type=gha,scope=opendesign-amd64,mode=max
+      - name: Full candidate container smoke
+        env:
+          CANDIDATE_IMAGE: ${{ steps.candidate.outputs.image }}
+        run: ./tests/container-smoke.sh "$CANDIDATE_IMAGE"
+      - name: Refuse existing candidate tag
+        env:
+          GHCR_ACTOR: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 .github/scripts/candidate-release.py preflight
+      - name: Log in to GHCR after smoke
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push tested candidate and verify anonymous manifest
+        env:
+          CANDIDATE_IMAGE: ${{ steps.candidate.outputs.image }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker push "$CANDIDATE_IMAGE"
+          PUSHED_DIGEST=$(docker inspect --format '{{index .RepoDigests 0}}' "$CANDIDATE_IMAGE")
+          export PUSHED_DIGEST="${PUSHED_DIGEST##*@}"
+          python3 .github/scripts/candidate-release.py verify
+      - name: Upload candidate receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ha-candidate-receipt
+          path: candidate-receipt.json
+          if-no-files-found: error
+
   # A release is merging a config.yaml version bump to main (ADR-0005 in the
   # WOOW addon pipeline). Pushing a tag no longer starts anything: it would skip
   # the pull request checks. Every main run whose version has no Release yet
   # goes through preflight, the architecture gate and publishing; a version
   # that is already released is left alone, so its image is never rebuilt.
   release-plan:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && ! inputs.candidate_core_image
     runs-on: ubuntu-24.04
     permissions:
       contents: read

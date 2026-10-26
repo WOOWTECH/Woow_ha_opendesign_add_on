@@ -128,8 +128,10 @@ docker exec "$container" sh -ceu '
     netstat -ltn | grep -q "0.0.0.0:8081 " && break
     sleep 1
   done
-  listeners=$(netstat -ltn | awk "/LISTEN/ { print \$4 }" | sort)
-  test "$listeners" = "$(printf "%s\n" 0.0.0.0:8081 0.0.0.0:8099 127.0.0.1:7456 127.0.0.1:7681 | sort)"
+  # Paseo may still be installing. Check public binds now; the lifecycle
+  # fixture below checks the exact full set after both start and manual stop.
+  public=$(netstat -ltn | awk "/LISTEN/ { print \$4 }" | grep -v "^127\.0\.0\.1:" | sort)
+  test "$public" = "$(printf "%s\n" 0.0.0.0:8081 0.0.0.0:8099 | sort)"
 '
 test "$(curl -sS -o /dev/null -w '%{http_code}' -H "X-Ingress-Path: $ingress_prefix" \
   -H 'X-Remote-User-Id: 0123456789abcdef0123456789abcdef' "http://127.0.0.1:${port}/mcp-admin/")" = 403
@@ -417,6 +419,7 @@ docker exec -u 1001:1001 "$container" sh -ceu '
 
 # Exercise the actual shared manager, native onboarding/MCP CAS and private
 # socket before restart; no provider login or billable model call is made.
+docker cp tests/listener-contract.mjs "$container:/tmp/listener-contract.mjs"
 docker cp tests/container-paseo-e2e.mjs "$container:/tmp/container-paseo-e2e.mjs"
 docker exec -u 1001:1001 "$container" node /tmp/container-paseo-e2e.mjs prepare
 
@@ -446,6 +449,7 @@ import json
 import sys
 assert json.load(open(sys.argv[1], encoding='utf-8')).get('ok') is True
 PY
+docker cp tests/listener-contract.mjs "$container:/tmp/listener-contract.mjs"
 docker cp tests/container-paseo-e2e.mjs "$container:/tmp/container-paseo-e2e.mjs"
 docker exec -u 1001:1001 "$container" node /tmp/container-paseo-e2e.mjs restored
 docker logs "$container" >"$tmp/container.log" 2>&1

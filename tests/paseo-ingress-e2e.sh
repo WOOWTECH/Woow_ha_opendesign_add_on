@@ -7,4 +7,4 @@ trap 'rm -rf "$fixture"' EXIT
 tar -xzf paseo-runtime/package.tgz --strip-components=1 -C "$fixture"
 cp paseo-runtime/package-lock.json "$fixture/package-lock.json"
 npm ci --omit=dev --ignore-scripts --no-audit --no-fund --prefix "$fixture"
-PASEO_PACKAGE_ROOT="$fixture" node --test tests/paseo-ingress-e2e.mjs
+PASEO_PACKAGE_ROOT="$fixture" node --test tests/paseo-ingress-e2e.mjs tests/paseo-startup-e2e.mjs

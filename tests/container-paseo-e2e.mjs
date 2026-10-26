@@ -2,6 +2,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
+import {execFileSync} from 'node:child_process';
+import {assertListeners,parseListeners} from './listener-contract.mjs';
 import {setTimeout as delay} from 'node:timers/promises';
 const mode=process.argv[2];assert.ok(['prepare','restored'].includes(mode));
 const prefix='/api/hassio_ingress/'+'a'.repeat(32);
@@ -24,8 +26,15 @@ const native=async(method,route,body)=>{
  const res=await fetch('http://127.0.0.1:7456'+route,{method,headers:{'Content-Type':'application/json','Sec-Fetch-Site':'same-origin'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(15000)});
  return {status:res.status,body:await res.json()};
 };
+function checkListeners(running) {
+ const json=path=>JSON.parse(fs.readFileSync(path,'utf8'));
+ assertListeners(parseListeners(execFileSync('netstat',['-ltn'],{encoding:'utf8'})), {
+  running, ...(running?{state:json('/data/opendesign/paseo/state.json'),config:json('/data/opendesign/paseo/daemon/config.json')}:{})
+ });
+}
 if(mode==='prepare'){
  const dto=await until(s=>s.desiredEnabled&&s.daemon?.reachable&&s.onboarding?.initialized);
+ assert.equal(dto.daemon.owned,true);checkListeners(true);
  const socket=fs.statSync(socketPath);assert.equal(socket.uid,1001);assert.equal(socket.gid,1002);assert.equal(socket.mode&0o777,0o660);
  const listed=await native('GET','/api/mcp/servers');assert.equal(listed.status,200);
  const entry=listed.body.servers.find(row=>row.id==='woow-paseo');assert.ok(entry);assert.deepEqual(entry.args,['/opt/opendesign-paseo/bin/mcp.mjs']);
@@ -35,6 +44,7 @@ if(mode==='prepare'){
  fs.writeFileSync(checkpoint,JSON.stringify({projectId:dto.onboarding.projectId,conversationId:dto.onboarding.conversationId}),{mode:0o600});
  assert.equal((await request({action:'disable'})).status,202);
  await until(s=>s.desiredEnabled===false&&!s.daemon?.running&&s.operation?.status!=='running');
+ checkListeners(false);
  console.log('Paseo smoke: native onboarding/CAS, managed start/stop, socket ownership passed');
 }else{
  const expected=JSON.parse(fs.readFileSync(checkpoint));
@@ -42,5 +52,6 @@ if(mode==='prepare'){
  assert.equal(dto.daemon?.running,false);assert.equal(dto.onboarding.projectId,expected.projectId);assert.equal(dto.onboarding.conversationId,expected.conversationId);
  const projects=await native('GET','/api/projects');assert.equal(projects.status,200);
  assert.equal(projects.body.projects.filter(p=>p.metadata?.woowPaseoInstallation).length,1);
+ checkListeners(false);
  console.log('Paseo smoke: manual stop and onboarding identity survive volume restore/restart');
 }

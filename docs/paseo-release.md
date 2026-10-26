@@ -41,3 +41,55 @@ its temporary configuration; the shipped config continues to allow only
 Trust references: [HA Core ingress forwarding](https://github.com/home-assistant/core/blob/dev/homeassistant/components/hassio/ingress.py)
 and [Supervisor authenticated user forwarding](https://github.com/home-assistant/supervisor/blob/main/supervisor/api/ingress.py).
 Forwarded host/proto are deliberately not accepted as browser-origin authority.
+
+## Candidate publication before stable merge
+
+Dispatch the existing `build.yml` workflow at this review branch with the
+`candidate_core_image` input set to main's verified immutable core reference.
+It accepts `ghcr.io/woowtech/open-design-core:YYYYMMDD.HHMM@sha256:…` or the
+read-only JCR equivalent (including a `-pending-approval` tag). A candidate
+input never starts the main release plan. The job also refuses main, forks,
+mutable core references, and existing candidate tags.
+
+```sh
+# CORE_IMAGE is the exact verified reference delivered by the core owner.
+# Run from an authenticated maintenance terminal; do not put credentials here.
+gh workflow run build.yml --repo WOOWTECH/Woow_ha_opendesign_add_on \
+  --ref feat/ha-paseo-0.2.7-20261026 -f candidate_core_image="$CORE_IMAGE"
+gh run list --repo WOOWTECH/Woow_ha_opendesign_add_on \
+  --workflow build.yml --branch feat/ha-paseo-0.2.7-20261026
+# After the candidate run succeeds:
+gh run download "$RUN_ID" --repo WOOWTECH/Woow_ha_opendesign_add_on \
+  --name ha-candidate-receipt
+```
+
+Validation must pass first. The candidate job builds with the input core,
+loads the image, runs the entire `container-smoke.sh` suite, checks that its
+unique tag is absent, and pushes that exact loaded image without rebuilding.
+It verifies the anonymously readable registry manifest against the pushed
+image digest and uploads `candidate-receipt.json` with source, core, runtime,
+version, and image pins. Any smoke failure prevents publication.
+The candidate tag is `0.2.7-rc.<run-id>.<run-attempt>` in the existing public
+`ghcr.io/woowtech/woow-ha-opendesign-amd64` package. No stable image tag,
+Git tag, GitHub Release, or Store publication is created.
+
+The actual image smoke waits for native onboarding and managed daemon
+readiness before checking all TCP listeners. It permits precisely the four
+existing listeners plus the single `127.0.0.1:<port>` recorded consistently in
+Paseo state and daemon config. It then requires only the four existing listeners
+after manual stop and after volume restore/restart. The bridge executable is
+also tested locally against a late native bind and temporarily unhealthy
+native endpoint: MCP reconciliation starts only after native health is ready.
+
+The isolated HA environment owner stages the candidate in the **existing
+canonical repository entry**, preserving its repository ID, add-on slug,
+options, and `/data`; changing the staged catalog version selects the candidate
+tag above without changing the image repository. Use Supervisor's normal
+update with an add-on backup. Do not uninstall, add a second repository, or
+rename the slug. Confirm catalog reload preserves the staged source before
+updating; source staging is a test-only VM operation owned by that agent.
+Record baseline/full slug and options, then verify native `0.2.6 → candidate`
+update, Ingress launcher/auth, runtime lifecycle, and data persistence. Exercise
+fresh install from a separate clean snapshot. Candidate image success alone is
+not HA acceptance. Stable merge remains held for main review, the final public
+core pin, and both image and real-HA evidence.

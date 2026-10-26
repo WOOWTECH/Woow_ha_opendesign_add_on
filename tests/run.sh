@@ -12,6 +12,7 @@ sh -n mcp-runtime/tests/unit/run.sh
 bash -n mcp-runtime/tests/e2e/run-proof.sh
 bash -n mcp-runtime/tests/e2e/run-upgrade-proof.sh
 python3 tests/workflow-policy.test.py
+python3 tests/candidate-release.test.py
 python3 tests/sign-in-hint.test.py
 python3 tests/import-core-policy.test.py
 
