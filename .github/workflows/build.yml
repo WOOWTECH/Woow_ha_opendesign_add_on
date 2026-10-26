@@ -164,6 +164,9 @@ jobs:
         run: python3 .github/scripts/candidate-release.py plan
       - name: Set up Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Check anonymous JCR registry endpoint
+        if: startsWith(steps.candidate.outputs.core, 'jcr-prod.woowtech.io/')
+        run: python3 -B .github/scripts/registry-preflight.py
       - name: Log in to JCR for candidate core read
         if: startsWith(steps.candidate.outputs.core, 'jcr-prod.woowtech.io/')
         uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
