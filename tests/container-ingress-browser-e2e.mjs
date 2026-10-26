@@ -162,7 +162,7 @@ try {
     env: { ...process.env, HOME: chromiumHome, XDG_CONFIG_HOME: configHome, XDG_CACHE_HOME: cacheHome },
     args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-http2', '--disable-quic'],
   });
-  // A fresh installation must expose plugin setup before a model is chosen.
+  // A fresh installation must expose both plugin setup pages before a model is chosen.
   const firstRunContext = await browser.newContext();
   const firstRunPlugins = await firstRunContext.newPage();
   await firstRunPlugins.goto(`http://127.0.0.1:${proxyPort}${prefix}/plugins`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
@@ -171,6 +171,7 @@ try {
   await Promise.all([firstRunPaseo.waitFor({ timeout: 30_000 }), firstRunOmnigent.waitFor({ timeout: 30_000 })]);
   assert.notEqual(new URL(firstRunPlugins.url()).pathname, '/onboarding', 'fresh /plugins must not redirect to model onboarding');
   assert.equal(await firstRunPaseo.getAttribute('href'), `${prefix}/paseo/setup/`);
+  assert.equal(await firstRunPaseo.getAttribute('target'), '_blank');
   assert.equal(await firstRunOmnigent.getAttribute('href'), `${prefix}/settings/omnigent`);
   assert.equal(await firstRunOmnigent.getAttribute('target'), '_blank');
   await firstRunContext.close();

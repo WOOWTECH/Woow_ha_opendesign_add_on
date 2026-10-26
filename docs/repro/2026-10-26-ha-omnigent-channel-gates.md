@@ -10,7 +10,7 @@ This records the additional source checks after the packaging patch. It is not i
 
 ## Merged source validation
 
-The feature branch now incorporates released HA 0.2.7 (`557f144e9e6b221687ff09833d57593a43c8b7ea`) and reserves candidate version 0.2.8. The merged suite passed 83 Node tests and the existing MCP/import checks. Real nginx ingress/startup checks passed with the pinned nginx executable. The subsequent OpenCode restore extension passed nine credential-permission cases; its cross-UID container proof remains part of image smoke.
+The feature branch now incorporates HA main 0.2.8 (`28e5a3cabb5852391173cfc65645f80d6dd3e400`) and reserves candidate version 0.2.9. The previous 0.2.8 Omnigent candidate passed full container smoke, but another 0.2.8 change merged first and omitted the HA Omnigent plugin. This next-version source must pass its own image, Ingress and real HA checks. The existing MCP/import checks, real nginx syntax check and nine credential-permission cases remain in the suite.
 
 ## Remaining release gates
 

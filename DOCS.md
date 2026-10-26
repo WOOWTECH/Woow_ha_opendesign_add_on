@@ -57,9 +57,9 @@ The core image provides OpenCode `1.18.33`. OpenDesign's native API BYOK flow us
 
 The core image also provides Claude Code `2.1.296`, Codex CLI `0.162.1`, and Pi Coding Agent `1.1.0` on `PATH` for OpenDesign's Local AI discovery. The add-on build checks each version under UID 1001; the add-on does not reinstall these provider CLIs on startup. The shared core also supplies the native Paseo launcher. Users can open Local AI and rescan after updating the add-on image. Use the built-in **CLI Terminal** plugin (**Plugins → Expert suites → Personal**; `<Ingress>/console/`) for interactive provider sign-in. OpenDesign's own Plugins page and daemon-managed Skill staging provide the same selected plugin/Skill context to its supported agent adapters.
 
-## Omnigent 0.2.8 candidate
+## Omnigent 0.2.9 candidate
 
-**Version 0.2.8 is a candidate.** It incorporates the released Paseo 0.2.7 changes and pins the public, approved w2.7 core `20261026.1751` / `sha256:14601a0b5c935b09193e7217daf603f2d3dbca2d9a9f3ba6f80d2fe2a406dbe2`, which contains the native Omnigent integration. Stable release still requires image and actual HA acceptance and a checked version-bump PR.
+**Version 0.2.9 is a candidate.** It follows the 0.2.8 Paseo release and keeps its public, approved w2.7 core `20261026.1751` / `sha256:14601a0b5c935b09193e7217daf603f2d3dbca2d9a9f3ba6f80d2fe2a406dbe2`, which contains the native Omnigent integration. The 0.2.8 HA shell omitted Omnigent; this version restores its plugin and daemon-managed host. Stable release still requires this source's image and actual HA acceptance.
 
 With that core, open **Plugins → Omnigent → Open → Configure**. The native GUI asks for the Omnigent HTTPS server URL, username and password. It discovers only the four engines already in the image: Claude Code, Codex, Pi and OpenCode. Their provider sign-ins are separate; the integration does not install missing provider engines. Complete setup to see available models/modules and the real reply/stop verification results. No Omnigent credentials go into HA add-on options.
 
@@ -94,7 +94,7 @@ gh workflow run build.yml --repo WOOWTECH/Woow_ha_opendesign_add_on \
   -f candidate_core_image="jcr-prod.woowtech.io/woow-paas-docker-local/open-design-core:<tag>-pending-approval@sha256:<digest>"
 ```
 
-This branch-only path runs validation and full container smoke before publishing a unique `0.2.8-rc.<run>.<attempt>` image, verifies anonymous GHCR access, and records its source/core/image digest in the `ha-candidate-receipt` artifact. It does not create a stable Release or notify the Store. An imported immutable GHCR core is also accepted. Omitting the input runs ordinary checks against the checked-in core, which cannot yet satisfy the new Omnigent contract.
+This branch-only path runs validation and full container smoke before publishing a unique `0.2.9-rc.<run>.<attempt>` image, verifies anonymous GHCR access, and records its source/core/image digest in the `ha-candidate-receipt` artifact. It does not create a stable Release or notify the Store. An imported immutable GHCR core is also accepted. Omitting the input runs ordinary checks against the checked-in approved core.
 
 After actual HA acceptance and the final version-bump PR merge, the existing immutable image → Release → Store notification/synchronization path remains authoritative. Store and Local Download must consume the released source/version and image digest; confirm their source SHA and catalog receipts after synchronization.
 

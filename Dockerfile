@@ -7,9 +7,9 @@
 # built-in Woow OpenDesign MCP server (mcp-runtime/).
 #
 # Omnigent is managed by the native daemon, including its private host state.
-# The approved w2.7 core below contains the native integration and preinstalled
-# SDK. Keep Dockerfile, CI, tests and the Supervisor local-build tag aligned via
-# .github/scripts/pin-core.sh <tag> <digest>.
+# The approved w2.7 core is published publicly from the PaaS image by digest;
+# it contains the native integration and preinstalled SDK. Keep Dockerfile, CI,
+# tests and the Supervisor local-build tag aligned with pin-core.sh.
 ARG BUILD_FROM=ghcr.io/woowtech/open-design-core:20261026.1751@sha256:14601a0b5c935b09193e7217daf603f2d3dbca2d9a9f3ba6f80d2fe2a406dbe2
 
 # --- Built-in Woow OpenDesign MCP server: admin UI assets (mcp-runtime/, see mcp-runtime/README.md) ---
@@ -106,7 +106,7 @@ RUN python3 /tmp/ha-patches/sign-in-hint.py /app/apps/web/out \
     && rm -rf /tmp/ha-patches
 
 # Same immutable shared runtime as the PaaS wrapper; it owns no core patches.
-# Require the native launcher and atomic MCP CAS in the pinned w2.5 core;
+# Require the native launcher and atomic MCP CAS in the pinned w2.7 core;
 # older cores fail this gate instead of silently omitting Paseo.
 COPY paseo-runtime/ /tmp/paseo-runtime/
 RUN sh /tmp/paseo-runtime/install.sh && rm -rf /tmp/paseo-runtime
@@ -138,7 +138,7 @@ RUN sh /tmp/mcp-runtime/install.sh && rm -rf /tmp/mcp-runtime
 
 # amd64 only: the core image is built for linux/amd64.
 ARG BUILD_ARCH=amd64
-ARG BUILD_VERSION=0.2.7
+ARG BUILD_VERSION=0.2.9
 ENV WOOW_ADDON_VERSION=${BUILD_VERSION}
 ARG BUILD_DATE
 ARG BUILD_DESCRIPTION="OpenDesign for Home Assistant"
