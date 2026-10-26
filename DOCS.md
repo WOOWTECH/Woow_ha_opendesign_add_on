@@ -59,7 +59,7 @@ The core image also provides Claude Code `2.1.296`, Codex CLI `0.162.1`, and Pi 
 
 ## Omnigent (candidate; pending core pin)
 
-**This is an unreleased packaging change, not an Omnigent-enabled 0.2.6 image.** `config.yaml` and Dockerfile still say 0.2.6 and all build inputs still pin core `20261024.0943` / `sha256:ffbb2bd070c488d79d960ee72fb7717f43791af6a4ae1585943598ad444a76e0`. That old core does **not** contain this restored integration. The new image contract deliberately fails on it. The release coordinator must supply the reviewed immutable native/core tag and digest, reconcile parallel Paseo work (including the separate 0.2.7 candidate), then choose the next unused release version through the normal PR/check gates.
+**Version 0.2.8 is a candidate.** It incorporates the released Paseo 0.2.7 changes. Checked-in build inputs still identify core `20261026.0712` / `sha256:366e337dc7ea192526468de33ad3f2f0ce97be3ffba9b8382a0c1d9ab88b1404`, which does not contain the restored Omnigent integration. Candidate builds must supply the reviewed new core by digest; stable release requires importing and pinning the approved core, passing image and actual HA acceptance, and merging the version-bump PR.
 
 With that core, open **Plugins → Omnigent → Open → Configure**. The native GUI asks for the Omnigent HTTPS server URL, username and password. It discovers only the four engines already in the image: Claude Code, Codex, Pi and OpenCode. Their provider sign-ins are separate; the integration does not install missing provider engines. Complete setup to see available models/modules and the real reply/stop verification results. No Omnigent credentials go into HA add-on options.
 
@@ -72,7 +72,7 @@ The native OpenDesign daemon owns the host and its lifecycle. The HA launcher co
 
 ### Candidate verification and release handoff
 
-No workflow was dispatched by this packaging patch. After the coordinator receives and imports the final public core, re-pin all existing build inputs with `.github/scripts/pin-core.sh <YYYYMMDD.HHMM> <sha256:digest>`, review core CLI versions, and run `tests/run.sh`. On an isolated Docker builder, build the HA image and run `tests/container-smoke.sh <candidate-image>`. This mandatory smoke checks the real native daemon's fresh-login/disable/enable behavior, only-four-engine inventory, persisted disable state across container recreation and root ownership restore, and the real GUI form through the Supervisor-style ingress proxy, alongside existing MCP, terminal, BYOK and export checks. It never submits valid service credentials.
+Before the stable release, import the approved public core, then re-pin all existing build inputs with `.github/scripts/pin-core.sh <YYYYMMDD.HHMM> <sha256:digest>`, review core CLI versions, and run `tests/run.sh`. On an isolated Docker builder, build the HA image and run `tests/container-smoke.sh <candidate-image>`. This mandatory smoke checks the real native daemon's fresh-login/disable/enable behavior, only-four-engine inventory, persisted disable state across container recreation and root ownership restore, and the real GUI form through the Supervisor-style ingress proxy, alongside existing MCP, terminal, BYOK and export checks. It never submits valid service credentials.
 
 For authenticated acceptance, the coordinator can run:
 
@@ -86,13 +86,17 @@ The harness creates only its own containers and volumes, mounts the credential f
 
 The launcher allows 35 seconds for daemon/host cleanup; Supervisor's `timeout: 45` leaves an outer margin before it kills the container. This uses the [standard Supervisor stop timeout](https://contributors.home-assistant.io/apps/reference/configuration/).
 
-The existing **Validate, build, and publish** workflow can be invoked on a coordinator-published **non-main candidate branch**:
+The existing **Validate, build, and publish** workflow publishes a uniquely tagged, tested candidate from a **non-main branch** when supplied an immutable core:
 
 ```sh
-gh workflow run build.yml --repo WOOWTECH/Woow_ha_opendesign_add_on --ref <candidate-branch>
+gh workflow run build.yml --repo WOOWTECH/Woow_ha_opendesign_add_on \
+  --ref <candidate-branch> \
+  -f candidate_core_image="jcr-prod.woowtech.io/woow-paas-docker-local/open-design-core:<tag>-pending-approval@sha256:<digest>"
 ```
 
-On that branch it runs validation, smoke and nonrelease builds without registry writes. It cannot validate Omnigent with the retained old core pin. Do not dispatch it on `main` as a candidate test: main can publish an unreleased version. After all gates and the final version-bump PR merge, the existing immutable image → Release → Store notification/synchronization path remains authoritative. Store and Local Download must both consume that released source/version and the same pinned core; confirm their source SHA/catalog receipts after synchronization. Never release this intermediate 0.2.6 source or replace the other team's unmerged 0.2.7.
+This branch-only path runs validation and full container smoke before publishing a unique `0.2.8-rc.<run>.<attempt>` image, verifies anonymous GHCR access, and records its source/core/image digest in the `ha-candidate-receipt` artifact. It does not create a stable Release or notify the Store. An imported immutable GHCR core is also accepted. Omitting the input runs ordinary checks against the checked-in core, which cannot yet satisfy the new Omnigent contract.
+
+After actual HA acceptance and the final version-bump PR merge, the existing immutable image → Release → Store notification/synchronization path remains authoritative. Store and Local Download must consume the released source/version and image digest; confirm their source SHA and catalog receipts after synchronization.
 
 ## Troubleshooting
 
