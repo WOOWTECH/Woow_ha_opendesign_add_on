@@ -59,11 +59,14 @@ if sys.argv[1] == 'seed':
         assert stat.S_IMODE(info.st_mode) == 0o644 and (info.st_uid, info.st_gid) == (0, 0)
     print('restored disposable synthetic archive with root/0644 credentials')
 elif sys.argv[1] == 'verify':
+    changed = []
     for name, content in FILES.items():
         p = HOME / name
-        assert p.read_bytes() == content, 'credential bytes changed'
+        if p.read_bytes() != content:
+            changed.append(name)
         assert stat.S_IMODE(p.stat().st_mode) == 0o600, 'credential mode not private'
         assert (p.stat().st_uid, p.stat().st_gid) == (1001, 1001)
+    assert not changed, 'synthetic credential bytes changed: ' + ', '.join(changed)
     for name in DIRS:
         assert stat.S_IMODE((HOME / name).stat().st_mode) == 0o700
     for name in SHARED_DIRS:
