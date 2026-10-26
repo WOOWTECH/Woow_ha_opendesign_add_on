@@ -70,6 +70,16 @@ elif sys.argv[1] == 'verify':
             expected = json.loads(content)
             assert actual.get('provider') == expected['provider'], 'OpenCode provider settings changed'
             assert isinstance(actual.get('mcp'), dict), 'shared OpenCode MCP entries missing'
+        elif name == '.codex/config.toml':
+            # The explicit shared-agents sync appends exactly one managed block.
+            # The original user config before that block must remain intact.
+            actual = p.read_bytes()
+            start = b'# BEGIN ha-opendesign shared MCP'
+            end = b'# END ha-opendesign shared MCP'
+            assert actual.count(start) == actual.count(end) == 1, 'Codex managed MCP block count changed'
+            assert actual.index(start) < actual.index(end), 'Codex managed MCP block order changed'
+            assert actual[:actual.index(start)].strip() == content.strip(), 'Codex user settings changed'
+            assert not actual[actual.index(end) + len(end):].strip(), 'unexpected Codex config suffix'
         elif p.read_bytes() != content:
             changed.append(name)
         assert stat.S_IMODE(p.stat().st_mode) == 0o600, 'credential mode not private'
@@ -118,6 +128,6 @@ for name in sys.argv[private_end:]:
     for command in [['codex', 'login', 'status'], ['claude', '--version'], ['pi', '--version'], ['opencode', '--version']]:
         result = subprocess.run(['su-exec', 'open-design:open-design', *command], capture_output=True, timeout=30)
         assert result.returncode == 0, 'native CLI credential/home probe failed: ' + command[0]
-    print('credential startup PASS: auth bytes retained, OpenCode provider settings and MCP merged, four providers 0600/0700, UID1001 usable; nginx/MCP denied; shared paths readable')
+    print('credential startup PASS: auth bytes retained, OpenCode and Codex user settings with MCP merged, four providers 0600/0700, UID1001 usable; nginx/MCP denied; shared paths readable')
 else:
     raise SystemExit('expected seed or verify')
