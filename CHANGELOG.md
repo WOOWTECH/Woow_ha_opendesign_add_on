@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.7
+
+- Add the shared native Paseo launcher and supervised runtime with first-install onboarding, official provider login, model testing and pairing setup through HA Ingress.
+- Persist runtime state and explicit manual stop beneath `/data`; share the existing provider home and preserve OpenDesign projects and other MCP entries through the native per-entry CAS API.
+- Protect setup/API routes behind the actual Supervisor peer and a private Unix socket. Validate authenticated user, origin and Ingress subpath; discard forwarded-header claims. Keep native new-tab launches beneath the Ingress prefix.
+- Increase graceful shutdown to 25 seconds with a 30-second Supervisor timeout. No option, public port, architecture, image name or stored data format is removed. Upgrade from 0.2.6 retains existing data; first Paseo activation needs package-registry access and target-local provider login.
+- Release preparation only until the reviewed w2.5 core digest is pinned and image/real-HA checks pass. The previous core pin is deliberately retained during review and fails the new native-capability build gate.
+
 ## 0.2.6
 
 **Built-in MCP server on MCP Python SDK 2.3, the runtime of the HA MCP add-ons 0.4.0** (the joint SDK 2 round with the WOOW PaaS, woow-mcp-server #82; vendored from `WOOWTECH/Woow_ha_mcp_addons` `claude-delivery` `40a8e9e7`, release 0.4.0, #22):

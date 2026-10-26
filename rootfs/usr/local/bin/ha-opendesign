@@ -3,8 +3,8 @@ set -Eeuo pipefail
 
 readonly DATA_DIR=/data/opendesign
 readonly NGINX_TMP=/tmp/ha-opendesign-nginx
-readonly SHUTDOWN_GRACE_SECONDS=5
-# Supervised children (OpenDesign, nginx, ttyd and the built-in MCP server). Every process started with start_child is required:
+readonly SHUTDOWN_GRACE_SECONDS=25
+# Supervised children (OpenDesign, nginx, ttyd, Paseo and the built-in MCP server). Every process started with start_child is required:
 # when any one exits, the launcher stops the others and exits so Supervisor
 # restarts the complete set. Add a process with one more start_child call below.
 child_pids=()
@@ -165,11 +165,17 @@ owned_dirs=(
   "$DATA_DIR/shared/workspaces"
   "$DATA_DIR/export-render"
   "$DATA_DIR/export-pdf"
+  "$DATA_DIR/paseo"
 )
 for dir in "${owned_dirs[@]}"; do
   prepare_owned_dir "$dir"
 done
 repair_data_ownership
+# Private bridge socket: its setgid parent gives nginx access to the socket
+# without making provider state or the HTTP bridge public. /run is ephemeral.
+prepare_owned_dir /run/ha-opendesign-paseo open-design:ha-ingress
+chmod 2750 /run/ha-opendesign-paseo
+chmod 0700 "$DATA_DIR/paseo"
 # nginx runs as its own UID (ha-ingress): besides the built-in MCP server it is
 # the only process that may open the MCP administration socket, which
 # OpenDesign, its agents and the ttyd shell (UID 1001) cannot.
@@ -217,6 +223,16 @@ no_supervisor_env=(/usr/bin/env -u SUPERVISOR_TOKEN -u HASSIO_TOKEN)
 
 start_child opendesign \
   "${no_supervisor_env[@]}" su-exec open-design:open-design /usr/local/bin/node /opt/ha-opendesign/headless-entry.mjs
+# Shared runtime runs as a required sibling, in the same PID namespace and
+# provider home as OpenDesign. Its internal supervisor preserves manual stop.
+start_child paseo \
+  "${no_supervisor_env[@]}" su-exec open-design:open-design /usr/bin/env \
+  OPENDESIGN_PASEO_TRANSPORT=ha-ingress \
+  OPENDESIGN_PASEO_SOCKET=/run/ha-opendesign-paseo/bridge.sock \
+  OPENDESIGN_PASEO_DATA_DIR="$DATA_DIR" \
+  OPENDESIGN_PASEO_BUNDLED_PLUGIN=/app/plugins/_official/woow/woow-paseo \
+  OPENDESIGN_PASEO_NATIVE_PORT=7456 OPENDESIGN_PASEO_AUTO_ENABLE=1 \
+  /usr/local/bin/node /opt/opendesign-paseo/bin/serve.mjs
 # `-e stderr` uses the inherited descriptor directly; reopening /dev/stderr is
 # denied when HA's root PID 1 drops to an unprivileged UID under its procfs.
 start_child nginx \

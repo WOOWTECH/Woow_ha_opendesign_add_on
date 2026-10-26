@@ -55,7 +55,7 @@ CI validates and smokes every build before architecture work. Pull requests and 
 
 The core image provides OpenCode `1.18.33`. OpenDesign's native API BYOK flow uses its `byok-opencode` runtime and discovers this executable on `PATH`. A first run after installation downloads OpenCode's model catalog once; on slow networks that first answer can take a minute. Configure the provider, model, and API key in the upstream Settings UI; those values are browser-local and are not persisted by the add-on. Clearing browser storage or using another browser requires fresh entry.
 
-The core image also provides Claude Code `2.1.296`, Codex CLI `0.162.1`, and Pi Coding Agent `1.1.0` on `PATH` for OpenDesign's Local AI discovery. The add-on build checks each version under UID 1001; the add-on does not install them on startup or inject a Paseo plugin. Users can open Local AI and rescan after updating the add-on image. Use the built-in **CLI Terminal** plugin (Plugins page; `<Ingress>/console/`) for interactive provider sign-in. OpenDesign's own Plugins page and daemon-managed Skill staging provide the same selected plugin/Skill context to its supported agent adapters.
+The core image also provides Claude Code `2.1.296`, Codex CLI `0.162.1`, and Pi Coding Agent `1.1.0` on `PATH` for OpenDesign's Local AI discovery. The add-on build checks each version under UID 1001; the add-on does not reinstall these provider CLIs on startup. The shared core also supplies the native Paseo launcher. Users can open Local AI and rescan after updating the add-on image. Use the built-in **CLI Terminal** plugin (Plugins page; `<Ingress>/console/`) for interactive provider sign-in. OpenDesign's own Plugins page and daemon-managed Skill staging provide the same selected plugin/Skill context to its supported agent adapters.
 
 ## Omnigent (removed in 0.2.1)
 
@@ -78,3 +78,45 @@ Omnigent is not part of the add-on until it is stable. 0.2.1 neither installs no
 - **Browser developer tools show `GET /api/amr/models` 500 and `GET /api/integrations/vela/status` 503 on page load:** expected. They belong to upstream OpenDesign's optional AMR runtime (the proprietary `vela` CLI), which the WoowTech core image does not ship, in the add-on or on the PaaS. Upstream defines `503 {"error":"amr-runtime-unavailable"}` as the authoritative "no AMR runtime" answer and returns `500 {"error":"AMR vela binary could not be resolved"}` for the model list (its own startup smoke test accepts 200 or 500). The web UI already handles both (the AMR model list comes back empty and the AMR sign-in check reads "not signed in"); other agents, BYOK, exports and MCP are not affected. To use AMR, the `vela` runtime would have to be provided separately.
 - **MCP client gets 404 after a pause:** its session was idle for 30 minutes and has ended; the client must initialize again (most clients reconnect on their own).
 - **MCP client gets 401:** the token was rotated or revoked; copy the current one from **MCP Server**. A browser-style request with an `Origin` header to `/mcp` is refused (403) by design; Claude.ai uses the `/private_<token>/mcp` URL instead.
+
+
+## Paseo setup and persistence
+
+From OpenDesign **Plugins → Expert suites → Personal**, open **Paseo**. The native
+launcher opens a new tab inside this add-on's Home Assistant Ingress prefix.
+Home Assistant login is required. There is no extra admin-role check beyond
+access to this add-on's Ingress, matching the built-in MCP administration policy.
+
+On first start, the managed service downloads its pinned Paseo execution
+packages and creates a marked **Paseo 連線初始化** project/conversation. The same
+conversation is reconciled on later starts. This step requires outbound access
+to the package registry; installation progress/errors appear in setup. Existing
+OpenDesign projects, MCP entries and provider homes are retained on upgrade.
+
+Select Claude Code, Codex or Pi, complete that provider's official login, read
+its models, and run the two-turn conversation test. A fresh installation has no
+provider credentials. A running daemon, model list or pairing link is not proof
+of a successful model conversation or completed official App pairing.
+
+**停止服務** persists the disabled intent. Restarting the add-on does not enable
+it again; **安裝並啟動** resumes it. The bridge itself stays supervised and available
+while Paseo is stopped. The add-on gives required processes up to 25 seconds to
+shut down inside Supervisor's 30-second timeout.
+
+Paseo state and installed runtime packages live under `/data/opendesign/paseo`;
+provider credentials remain in `/data/opendesign/home`, shared with native
+OpenDesign agent tools. Source material may also live in that home's
+`.local/share/opendesign-paseo`. Cold HA backups include all of `/data`. The
+bridge code is immutable image content at `/opt/opendesign-paseo`; its private
+socket under `/run/ha-opendesign-paseo` is recreated at start. No bridge port is
+mapped to the LAN, and Supervisor tokens are removed before every child starts.
+
+The proxy permits Paseo requests only from the actual Supervisor peer
+172.30.32.2. It supplies the authenticated user and validated Ingress prefix to
+the Unix-socket bridge, preserves browser Host/Origin/Referer, and discards
+forwarded-header claims. Mutations require the exact same-origin setup page.
+Do not bypass that proxy or expose the socket. The setting page supports both
+local HTTP Home Assistant and HTTPS; login/pairing links stay external and do
+not receive an Ingress referrer.
+
+Release maintainers: see [the 0.2.7 packaging/release gate](docs/paseo-release.md).

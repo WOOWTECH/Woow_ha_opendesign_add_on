@@ -8,7 +8,8 @@ OpenDesign **0.24.1** from the shared WoowTech OpenDesign core image (the same b
 - OpenDesign project and application state is persisted under `/data/opendesign` and is included in cold backups.
 - System Chromium, Playwright and Noto CJK/emoji fonts provide headless HTML rendering.
 - Downloads supported by the pinned upstream application: standalone HTML, ZIP, screenshot PDF, PNG/JPEG, and screenshot-based PPTX. **Editable PPTX is unsupported** and returns a clear error.
-- The core image provides Claude Code `2.1.296`, Codex CLI `0.162.1`, Pi Coding Agent `1.1.0`, and OpenCode `1.18.33` (OpenDesign's native `byok-opencode` API runtime). The add-on build asserts each version as UID 1001; no Paseo plugin or first-use CLI download is required.
+- The native **Paseo** plugin opens a protected setup page through HA Ingress. Its managed runtime, login state and onboarding conversation survive add-on restarts; manual stop remains stopped. See [setup and persistence](DOCS.md#paseo-setup-and-persistence).
+- The core image provides Claude Code `2.1.296`, Codex CLI `0.162.1`, Pi Coding Agent `1.1.0`, and OpenCode `1.18.33` (OpenDesign's native `byok-opencode` API runtime). The add-on build asserts each version as UID 1001; these agent CLIs do not require a first-use download.
 - WoowTech changes from the core: white-label UI, Traditional Chinese (zh-TW) locale fixes, export fixes, the bundled `woowtech-brand` skill, and no `brainstorming` skill.
 - No Omnigent: 0.2.1 removed the Omnigent host and the core's `woow-omnigent` plugin and skill until Omnigent is stable (see [DOCS.md](DOCS.md#omnigent-removed-in-021)).
 - OpenDesign owns installed plugins and skills in its persistent data directory. Install them from OpenDesign's **Plugins** page; the daemon stages the selected skill into the project and supplies it to whichever installed agent runtime runs that project.

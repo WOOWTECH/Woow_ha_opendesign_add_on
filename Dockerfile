@@ -111,6 +111,12 @@ COPY ha-patches/sign-in-hint.py /tmp/ha-patches/sign-in-hint.py
 RUN python3 /tmp/ha-patches/sign-in-hint.py /app/apps/web/out \
     && rm -rf /tmp/ha-patches
 
+# Same immutable shared runtime as the PaaS wrapper; it owns no core patches.
+# This installation deliberately fails on the old pre-Paseo core still pinned
+# above. Main must supply the reviewed w2.5 immutable digest before release.
+COPY paseo-runtime/ /tmp/paseo-runtime/
+RUN sh /tmp/paseo-runtime/install.sh && rm -rf /tmp/paseo-runtime
+
 COPY rootfs/ /
 RUN set -eu; \
     mkdir -p /data/opendesign/home; \
@@ -138,7 +144,7 @@ RUN sh /tmp/mcp-runtime/install.sh && rm -rf /tmp/mcp-runtime
 
 # amd64 only: the core image is built for linux/amd64.
 ARG BUILD_ARCH=amd64
-ARG BUILD_VERSION=0.2.6
+ARG BUILD_VERSION=0.2.7
 ENV WOOW_ADDON_VERSION=${BUILD_VERSION}
 ARG BUILD_DATE
 ARG BUILD_DESCRIPTION="OpenDesign for Home Assistant"
