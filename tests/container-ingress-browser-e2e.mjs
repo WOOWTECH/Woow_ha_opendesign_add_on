@@ -162,6 +162,19 @@ try {
     env: { ...process.env, HOME: chromiumHome, XDG_CONFIG_HOME: configHome, XDG_CACHE_HOME: cacheHome },
     args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-http2', '--disable-quic'],
   });
+  // A fresh installation must expose plugin setup before a model is chosen.
+  const firstRunContext = await browser.newContext();
+  const firstRunPlugins = await firstRunContext.newPage();
+  await firstRunPlugins.goto(`http://127.0.0.1:${proxyPort}${prefix}/plugins`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  const firstRunPaseo = firstRunPlugins.getByTestId('plugins-card-open-woow-paseo');
+  const firstRunOmnigent = firstRunPlugins.getByTestId('plugins-card-open-woow-omnigent');
+  await Promise.all([firstRunPaseo.waitFor({ timeout: 30_000 }), firstRunOmnigent.waitFor({ timeout: 30_000 })]);
+  assert.notEqual(new URL(firstRunPlugins.url()).pathname, '/onboarding', 'fresh /plugins must not redirect to model onboarding');
+  assert.equal(await firstRunPaseo.getAttribute('href'), `${prefix}/paseo/setup/`);
+  assert.equal(await firstRunOmnigent.getAttribute('href'), `${prefix}/settings/omnigent`);
+  assert.equal(await firstRunOmnigent.getAttribute('target'), '_blank');
+  await firstRunContext.close();
+
   const context = await browser.newContext({ acceptDownloads: true });
   await context.addInitScript(() => {
     localStorage.setItem('open-design:locale', 'en');

@@ -59,6 +59,8 @@ if (process.argv[2] === 'fresh') {
   }
   const crossOrigin = await request('actions', { action: 'enable' }, { Origin: 'https://untrusted.invalid' });
   assert.equal(crossOrigin.code, 403);
+  const crossSiteWithoutOrigin = await request('actions', { action: 'enable' }, { 'Sec-Fetch-Site': 'cross-site' });
+  assert.equal(crossSiteWithoutOrigin.code, 403, 'cross-site metadata must reject a mutation even without Origin');
   fresh(await status());
   const disabled = await action('disable');
   assert.equal(disabled.enabled, false);
