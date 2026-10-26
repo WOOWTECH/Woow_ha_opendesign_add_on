@@ -137,8 +137,10 @@ docker exec "$container" sh -ceu '
     netstat -ltn | grep -q "0.0.0.0:8081 " && break
     sleep 1
   done
-  listeners=$(netstat -ltn | awk "/LISTEN/ { print \$4 }" | sort)
-  test "$listeners" = "$(printf "%s\n" 0.0.0.0:8081 0.0.0.0:8099 127.0.0.1:7456 127.0.0.1:7681 | sort)"
+  # Paseo may still be installing. Check public binds now; the lifecycle
+  # fixture below checks the exact full set after both start and manual stop.
+  public=$(netstat -ltn | awk "/LISTEN/ { print \$4 }" | grep -v "^127\.0\.0\.1:" | sort)
+  test "$public" = "$(printf "%s\n" 0.0.0.0:8081 0.0.0.0:8099 | sort)"
 '
 test "$(curl -sS -o /dev/null -w '%{http_code}' -H "X-Ingress-Path: $ingress_prefix" \
   -H 'X-Remote-User-Id: 0123456789abcdef0123456789abcdef' "http://127.0.0.1:${port}/mcp-admin/")" = 403
@@ -337,6 +339,7 @@ for path, key in (("/api/plugins", "plugins"), ("/api/skills", "skills")):
     assert isinstance(data.get(key), list) and data[key], path + " native catalog is empty"
     catalog[key] = {entry.get("id") for entry in data[key]}
 # Preserve the native catalog from core; the launcher is not prompt content.
+assert "woow-paseo" in catalog["plugins"], "native Paseo launcher missing"
 assert "woowtech-brand" in catalog["skills"], "core skills missing"
 assert "brainstorming" not in catalog["skills"], "brainstorming must not be offered"
 assert "woow-omnigent" in catalog["plugins"], "native Omnigent plugin missing (pending core pin)"
@@ -409,10 +412,17 @@ docker exec "$container" sh -ceu '
   ln -s /data/opendesign/legacy-credentials-target /data/opendesign/credentials
 '
 
+# Exercise the actual shared manager, native onboarding/MCP CAS and private
+# socket before restart; no provider login or billable model call is made.
+docker cp tests/listener-contract.mjs "$container:/tmp/listener-contract.mjs"
+docker cp tests/container-paseo-e2e.mjs "$container:/tmp/container-paseo-e2e.mjs"
+docker exec -u 1001:1001 "$container" node /tmp/container-paseo-e2e.mjs prepare
+
 # Stop/recreate the container while retaining only its named /data volume.
 # Every process must stop on TERM inside the launcher's grace period, without
 # the KILL fallback.
-docker stop -t 10 "$container" >/dev/null
+docker stop -t 45 "$container" >/dev/null
+test "$(docker inspect -f '{{.State.ExitCode}}' "$container")" = 0
 docker logs "$container" >"$tmp/container.log" 2>&1
 if grep -Fq 'grace; sending KILL' "$tmp/container.log"; then
   echo 'a process ignored TERM and needed the launcher KILL fallback' >&2
@@ -424,9 +434,16 @@ docker rm "$container" >/dev/null
 # (measured on HAOS 18.1: OpenDesign's database came back as root and the
 # daemon failed with SQLITE_READONLY). Reproduce that on the retained volume;
 # the launcher must hand everything back to open-design before OpenDesign starts.
-docker run --rm --platform linux/amd64 -v "$volume:/data" --entrypoint sh "$image" -ceu '
+docker run --rm --platform linux/amd64 -v "$volume:/data" \
+  -v "$PWD/tests/credential-permissions-container.py:/tmp/credential-permissions.py:ro" \
+  --entrypoint sh "$image" -ceu '
+  # Disposable fixture: model the sole native backup_exclude subtree. Actual
+  # Supervisor backup/uninstall/fresh restore is a separate native HA gate.
+  test -d /data/opendesign/paseo/packages/runtime/releases
+  rm -rf /data/opendesign/paseo/packages/runtime
   find /data/opendesign -mindepth 1 -exec chown -h 0:0 {} +
   test "$(find /data/opendesign -mindepth 1 -user 0 | wc -l)" -gt 0
+  python3 /tmp/credential-permissions.py seed
 '
 start_container
 wait_for_health
@@ -435,6 +452,11 @@ import json
 import sys
 assert json.load(open(sys.argv[1], encoding='utf-8')).get('ok') is True
 PY
+docker cp tests/listener-contract.mjs "$container:/tmp/listener-contract.mjs"
+docker cp tests/container-paseo-e2e.mjs "$container:/tmp/container-paseo-e2e.mjs"
+docker exec -u 1001:1001 "$container" node /tmp/container-paseo-e2e.mjs restored
+docker cp tests/credential-permissions-container.py "$container:/tmp/credential-permissions.py"
+docker exec "$container" python3 /tmp/credential-permissions.py verify
 docker logs "$container" >"$tmp/container.log" 2>&1
 grep -Eq '\[ha-opendesign\] returned [0-9]+ path\(s\) under /data/opendesign to open-design' "$tmp/container.log"
 docker exec "$container" sh -ceu '
@@ -457,6 +479,23 @@ docker exec "$container" sh -ceu '
 '
 docker cp tests/container-omnigent-contract.mjs "$container:/tmp/container-omnigent-contract.mjs"
 docker exec -u 1001:1001 "$container" node /tmp/container-omnigent-contract.mjs restored
+
+# The previous restored check resumed Paseo through the GUI action. Repeat
+# with enabled intent, missing runtime files and root-owned restored data;
+# startup must rebuild without an enable request or new onboarding identity.
+docker stop -t 45 "$container" >/dev/null
+test "$(docker inspect -f '{{.State.ExitCode}}' "$container")" = 0
+docker rm "$container" >/dev/null
+docker run --rm --platform linux/amd64 -v "$volume:/data" --entrypoint sh "$image" -ceu '
+  test -d /data/opendesign/paseo/packages/runtime/releases
+  rm -rf /data/opendesign/paseo/packages/runtime
+  find /data/opendesign -mindepth 1 -exec chown -h 0:0 {} +
+'
+start_container
+wait_for_health
+docker cp tests/listener-contract.mjs "$container:/tmp/listener-contract.mjs"
+docker cp tests/container-paseo-e2e.mjs "$container:/tmp/container-paseo-e2e.mjs"
+docker exec -u 1001:1001 "$container" node /tmp/container-paseo-e2e.mjs restored-enabled
 
 # Direct renderer acceptance uses the Chromium and playwright-core installed in
 # the image. It requires no provider key or generation call.
@@ -503,7 +542,7 @@ docker exec "$container" node /opt/ha-opendesign/container-ingress-browser-e2e.m
 # Start the real renderer acceptance in a fresh process namespace. Alpine
 # crashpad state can remain unusable after closing the bridge-test Chromium on
 # constrained GitHub runners even when no process is left to wait for.
-docker stop -t 10 "$container" >/dev/null
+docker stop -t 45 "$container" >/dev/null
 docker rm "$container" >/dev/null
 start_container
 wait_for_health

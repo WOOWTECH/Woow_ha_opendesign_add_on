@@ -30,6 +30,9 @@ async function boot(root) {
   await mkdir(bin, { recursive: true });
   await rm(records, { recursive: true, force: true });
   await mkdir(records);
+  const credentialHelper = path.join(root, 'credentials.py');
+  await writeFile(credentialHelper, (await readFile(new URL('../rootfs/usr/local/libexec/ha-opendesign-credentials.py', import.meta.url), 'utf8'))
+    .replace("HOME = Path('/data/opendesign/home')", `HOME = Path(${JSON.stringify(path.join(data, 'home'))})`));
   await writeFile(path.join(bin, 'id'), '#!/bin/sh\necho 0\n', { mode: 0o755 });
   await writeFile(path.join(bin, 'su-exec'), '#!/bin/sh\nshift\nexec "$@"\n', { mode: 0o755 });
   const child = path.join(root, 'child.mjs');
@@ -48,11 +51,18 @@ setInterval(() => {}, 1000);
   const source = launcher
     .replace('readonly DATA_DIR=/data/opendesign', `readonly DATA_DIR=${shellQuote(data)}`)
     .replace('readonly NGINX_TMP=/tmp/ha-opendesign-nginx', `readonly NGINX_TMP=${shellQuote(path.join(root, 'nginx'))}`)
+    .replaceAll('/run/ha-opendesign-paseo', path.join(root, 'paseo-run'))
+    .replaceAll('/run/ha-opendesign-return', path.join(root, 'return-run'))
+    .replace('python3 /usr/local/libexec/ha-opendesign-return.py', 'false')
+    .replace('/usr/local/libexec/ha-opendesign-credentials.py', shellQuote(credentialHelper))
+    .replaceAll('open-design:ha-ingress', `${process.getuid()}:${process.getgid()}`)
+    .replaceAll('root:ha-ingress', `${process.getuid()}:${process.getgid()}`)
     .replaceAll('open-design:open-design', `${process.getuid()}:${process.getgid()}`)
     .replaceAll('ha-ingress:ha-ingress', `${process.getuid()}:${process.getgid()}`)
     .replaceAll('-user open-design', `-user ${process.getuid()}`)
     .replaceAll('-group open-design', `-group ${process.getgid()}`)
     .replace('/usr/local/bin/node /opt/ha-opendesign/headless-entry.mjs', `${shellQuote(process.execPath)} ${shellQuote(child)} opendesign`)
+    .replace('/usr/local/bin/node /opt/opendesign-paseo/bin/serve.mjs', `${shellQuote(process.execPath)} ${shellQuote(child)} paseo`)
     .replace('/usr/sbin/nginx', `${shellQuote(process.execPath)} ${shellQuote(child)} nginx`)
     .replace('/usr/bin/ttyd', `${shellQuote(process.execPath)} ${shellQuote(child)} ttyd`)
     .replace('/opt/woow/bin/ha-opendesign-mcp', `${shellQuote(process.execPath)} ${shellQuote(child)} mcp`);
@@ -72,7 +82,7 @@ setInterval(() => {}, 1000);
       if (processHandle.exitCode !== null) throw new Error(`launcher exited: ${stderr}`);
       return readFile(path.join(records, 'mcp')).then(() => true, () => false);
     }, 'children start');
-    for (const name of ['opendesign', 'nginx', 'ttyd', 'mcp']) {
+    for (const name of ['opendesign', 'paseo', 'nginx', 'ttyd', 'mcp']) {
       await waitFor(() => readFile(path.join(records, name)).then(() => true, () => false), name);
       const record = JSON.parse(await readFile(path.join(records, name), 'utf8'));
       assert.equal(record.data, data);
@@ -87,7 +97,7 @@ setInterval(() => {}, 1000);
     clearTimeout(killTimer);
     assert.equal(signal, null, stderr);
   }
-  for (const name of ['opendesign', 'nginx', 'ttyd', 'mcp']) {
+  for (const name of ['opendesign', 'paseo', 'nginx', 'ttyd', 'mcp']) {
     assert.equal(await readFile(path.join(records, `${name}.stopped`), 'utf8'), 'yes');
   }
   assert.doesNotMatch(stderr, /grace; sending KILL/);

@@ -6,7 +6,32 @@
 - Stop retiring Omnigent state on each HA boot. New setup uses the daemon-private `/data/opendesign/integrations/omnigent/host` and must ask for URL/username/password in the GUI. Ignore inherited legacy location overrides; neither `home/.omnigent` nor `.backup/omnigent-*` is automatically adopted or deleted. New setup survives restart/upgrade and cold backup restore.
 - Add executable launcher persistence/shutdown tests, native daemon and GUI ingress smoke, and an opt-in real-service candidate harness for four-engine reply/stop, host resume, disable/re-enable/disconnect, cold restore and image upgrade. Preserve existing ingress, terminal, MCP, BYOK and export behavior.
 - **Migration/rollback:** retired users sign in again; already-configured new hosts retain `/data`. Backups contain Omnigent identity/login tokens and legacy archives. Stop the old host before restoring its identity elsewhere; rollback to a release without the integration requires the pre-upgrade backup. No HA option, port, architecture or image name changes.
-- **Not releasable yet:** version stays 0.2.6 and core stays `20261024.0943` (`sha256:ffbb2bd0…`), which does not contain the restored Omnigent integration and intentionally fails the new image contract. Main must supply the immutable core pin, retain parallel Paseo changes after 0.2.7 coordination, select an unused version and run image/actual-HA acceptance before release. Store/Local Download continue through the existing Release synchronization.
+- **Not releasable yet:** version stays 0.2.7 and core stays `20261026.0712` (`sha256:366e337d…`), which does not contain the restored Omnigent integration and intentionally fails the new image contract. Main must supply the immutable core pin, retain the merged Paseo 0.2.7 changes, select an unused version and run image/actual-HA acceptance before release. Store/Local Download continue through the existing Release synchronization.
+
+## 0.2.7
+
+- 原生備份還原後，在服務啟動前恢復已知 CLI 憑證／設定檔的 0600 與
+  provider 私有目錄的 0700；不改寫內容、不改專案權限，拒絕不安全的連結。
+
+- Return from Paseo setup to the native Home Assistant OpenDesign app page,
+  avoiding a top-level `/plugins` URL that fails on reload. The installed slug
+  is discovered through a bounded root-only Supervisor self lookup; missing
+  metadata returns to Home Assistant instead. Runtime package bytes are unchanged.
+
+- Cold backups exclude only the reconstructible Paseo `packages/runtime`
+  directory through native `backup_exclude`, avoiding runtime binary hardlinks
+  that fail Supervisor's streaming restore. Credentials, projects, sessions,
+  daemon identity, enabled intent, provider installations and npm cache are
+  retained. Enabled startup or a later GUI start rebuilds from the bundled
+  exact lock; package-source connectivity is required (offline recovery is
+  not guaranteed). Existing archives are not rewritten.
+
+- Report successful exit after a requested TERM/INT has stopped all supervised processes. The previous launcher propagated the interrupted wait's 143/130 and Supervisor showed `error` after a successful native stop. Unexpected required-process exits still stop peers and return failure. Cold backup had succeeded; restore failure is not claimed.
+- Add the shared native Paseo launcher and supervised runtime with first-install onboarding, official provider login, model testing and pairing setup through HA Ingress.
+- Persist runtime state and explicit manual stop beneath `/data`; share the existing provider home and preserve OpenDesign projects and other MCP entries through the native per-entry CAS API.
+- Protect setup/API routes behind the actual Supervisor peer and a private Unix socket. Validate authenticated user, origin and Ingress subpath; discard forwarded-header claims. Keep native new-tab launches beneath the Ingress prefix.
+- Increase graceful shutdown to 25 seconds with a 30-second Supervisor timeout. No option, public port, architecture, image name or stored data format is removed. Upgrade from 0.2.6 retains existing data; first Paseo activation needs package-registry access and target-local provider login.
+- Pins the reviewed w2.5 core `20261026.0712` (`sha256:366e337d…`, native fork `c8ae390`), copied to public GHCR without changing its digest. Candidate image smoke and native HA acceptance remain release gates.
 
 ## 0.2.6
 

@@ -171,7 +171,7 @@ test('no supervised child inherits the Supervisor token; nginx and MCP run under
   assert.equal(env.status, 0, env.stderr);
   assert.equal(env.stdout.trim(), 'unset unset kept');
   const starts = launcher.match(/^start_child \w+ \\\n  .*$/gm);
-  assert.equal(starts.length, 4);
+  assert.equal(starts.length, 5);
   for (const start of starts) assert.match(start, /\n  "\$\{no_supervisor_env\[@\]\}" /);
   assert.match(launcher, /start_child nginx \\\n  "\$\{no_supervisor_env\[@\]\}" su-exec ha-ingress:ha-ingress \/usr\/sbin\/nginx/);
   assert.match(launcher, /start_child mcp \\\n  "\$\{no_supervisor_env\[@\]\}" \/opt\/woow\/bin\/ha-opendesign-mcp$/m);

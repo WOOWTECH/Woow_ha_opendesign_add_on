@@ -24,7 +24,8 @@
 3. 安裝 **Woow HA OpenDesign**，在「資訊」頁籤打開 **Watchdog**（Home Assistant 新裝的附加元件預設是關的；沒開時內部程序一結束，附加元件就會停著不會自己回來），再啟動並從側邊欄開啟。
 4. 在 **設定** 設定 API BYOK 的供應商、模型與金鑰；設定只會保留在該瀏覽器。
 5. 開啟 **Local AI → Rescan** 重新掃描已預裝的 CLI。接著進入 **Plugins** 安裝工作流程，再於專案中選取；OpenDesign 會將所選 Skill stage 到專案並交給當次選用的代理。
-6. 在 OpenDesign 打開「外掛」頁（已安裝），按內建 **CLI 終端機** 的「開啟」（開新分頁），在終端執行 `claude` 後輸入 `/login`、`codex login --device-auth`，或執行 `pi` 後在 TUI 輸入 `/login`。登入狀態保存在 `/data/opendesign/home`。OpenCode API 供應商可在 **Settings → API providers** 設定。
+6. 在 OpenDesign 開啟 **Plugins → Expert suites → Personal**，按內建 **CLI 終端機** 的「開啟」（開新分頁），在終端執行 `claude` 後輸入 `/login`、`codex login --device-auth`，或執行 `pi` 後在 TUI 輸入 `/login`。登入狀態保存在 `/data/opendesign/home`。OpenCode API 供應商可在 **Settings → API providers** 設定。
+7. 在同一個 **Plugins → Expert suites → Personal** 頁面開啟 **Paseo**，進行連線設定、供應商登入、模型選擇與服務啟停；詳見 [Paseo 設定與資料保存](DOCS.md#paseo-setup-and-persistence)。
 
 本附加元件沒有設定選項，也沒有主機目錄掛載。
 
@@ -59,4 +60,4 @@ API BYOK 的供應商、模型與金鑰只存在管理員瀏覽器的 localStora
 
 ## 授權
 
-執行映像衍生自 WoowTech OpenDesign core 映像，公開發布為 `ghcr.io/woowtech/open-design-core`（從 WoowTech fork 建置的 OpenDesign 0.24.1）。Dockerfile 與 release／CI 建置以 digest 固定；目前保留的 pin 屬於正式 0.2.6 core，尚不含本次恢復的 Omnigent；必須先由 main 更新 immutable core pin 才能通過候選建置契約。Home Assistant 本機附加元件建置器不接受 `build.yaml` 的 digest 語法，因此該開發路徑使用 tag（與 digest pin 對應的同一 core tag）。OpenDesign 採 Apache-2.0 授權，core 映像附有其授權與 WoowTech 改動聲明；本儲存庫的附加元件封裝及整合程式採 MIT 授權，詳見 [LICENSE](LICENSE)，因此映像標示為 `Apache-2.0 AND MIT`。
+執行映像衍生自 WoowTech OpenDesign core 映像，公開發布為 `ghcr.io/woowtech/open-design-core`（從 WoowTech fork 建置的 OpenDesign 0.24.1）。Dockerfile 與 release／CI 建置以 digest 固定；目前保留的 pin 屬於正式 0.2.7 core，尚不含本次恢復的 Omnigent；必須先由 main 更新 immutable core pin 才能通過候選建置契約。Home Assistant 本機附加元件建置器不接受 `build.yaml` 的 digest 語法，因此該開發路徑使用 tag（與 digest pin 對應的同一 core tag）。OpenDesign 採 Apache-2.0 授權，core 映像附有其授權與 WoowTech 改動聲明；本儲存庫的附加元件封裝及整合程式採 MIT 授權，詳見 [LICENSE](LICENSE)，因此映像標示為 `Apache-2.0 AND MIT`。
