@@ -78,8 +78,14 @@ Git tag, GitHub Release, or Store publication is created.
 
 The actual image smoke waits for native onboarding and managed daemon
 readiness before checking all TCP listeners. It permits precisely the four
-existing listeners plus the single `127.0.0.1:<port>` recorded consistently in
-Paseo state and daemon config. It then requires only the four existing listeners
+existing listeners plus the `127.0.0.1:<port>` recorded consistently in Paseo
+state and daemon config and one internal OpenCode tool bridge. Paseo 0.11.2
+starts that bearer-protected bridge on an ephemeral IPv4 loopback port. The
+fixture resolves the private runtime-reported worker PID, verifies UID 1001,
+and matches socket inodes from `/proc/<pid>/fd` with the kernel TCP tables.
+Exactly two listeners must belong to that worker; the auxiliary endpoint must
+return 401 for missing and invalid bearer tokens. Additional public, IPv6,
+unowned or duplicate listeners fail. It then requires only the four existing listeners
 after manual stop and after volume restore/restart. The bridge executable is
 also tested locally against a late native bind and temporarily unhealthy
 native endpoint: MCP reconciliation starts only after native health is ready.

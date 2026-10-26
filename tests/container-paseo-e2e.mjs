@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
 import {execFileSync} from 'node:child_process';
-import {assertListeners,parseListeners} from './listener-contract.mjs';
+import {assertListeners,parseListeners,readProcessTcpListeners} from './listener-contract.mjs';
 import {setTimeout as delay} from 'node:timers/promises';
 const mode=process.argv[2];assert.ok(['prepare','restored'].includes(mode));
 const prefix='/api/hassio_ingress/'+'a'.repeat(32);
@@ -26,15 +26,42 @@ const native=async(method,route,body)=>{
  const res=await fetch('http://127.0.0.1:7456'+route,{method,headers:{'Content-Type':'application/json','Sec-Fetch-Site':'same-origin'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(15000)});
  return {status:res.status,body:await res.json()};
 };
-function checkListeners(running) {
+async function checkListeners(running) {
  const json=path=>JSON.parse(fs.readFileSync(path,'utf8'));
+ let workerListeners;
+ if(running){
+  // Inspect private lifecycle status locally; worker PIDs never enter the public DTO.
+  const {runtimeContext}=await import('/opt/opendesign-paseo/src/runtime-context.mjs');
+  const {env}=runtimeContext({dataDir:'/data/opendesign',home:'/data/opendesign/home',env:{PATH:process.env.PATH}});
+  const processInfo=JSON.parse(execFileSync(process.execPath,['--input-type=module','-e',`
+   import {status} from '/opt/opendesign-paseo/vendor/pi-paseo/src/runtime.mjs';
+   const {daemon}=await status();
+   console.log(JSON.stringify({owned:daemon.owned,reachable:daemon.reachable,workerPid:daemon.workerPid}));
+  `],{env,encoding:'utf8',timeout:20000}));
+  assert.equal(processInfo.owned,true);assert.equal(processInfo.reachable,true);
+  assert.ok(Number.isInteger(processInfo.workerPid)&&processInfo.workerPid>1);
+  assert.equal(fs.statSync(`/proc/${processInfo.workerPid}`).uid,1001);
+  workerListeners=readProcessTcpListeners(processInfo.workerPid);
+ }
+ const state=running?json('/data/opendesign/paseo/state.json'):undefined;
  assertListeners(parseListeners(execFileSync('netstat',['-ltn'],{encoding:'utf8'})), {
-  running, ...(running?{state:json('/data/opendesign/paseo/state.json'),config:json('/data/opendesign/paseo/daemon/config.json')}:{})
+  running,workerListeners,state, ...(running?{config:json('/data/opendesign/paseo/daemon/config.json')}:{})
  });
+ if(running){
+  const auxiliary=workerListeners.find(address=>address!==`127.0.0.1:${state.port}`);
+  for(const authorization of [undefined,'Bearer invalid-smoke-token']){
+   const res=await fetch(`http://${auxiliary}/_internal/opencode/tools`,{
+    headers:authorization?{authorization}:{},signal:AbortSignal.timeout(5000),redirect:'error'
+   });
+   assert.equal(res.status,401,'internal OpenCode bridge must require its private bearer token');
+   assert.deepEqual(await res.json(),{error:'Unauthorized'});
+  }
+  console.log('Paseo listeners: recorded daemon + one kernel-owned OpenCode bridge; missing/invalid token rejected');
+ }
 }
 if(mode==='prepare'){
  const dto=await until(s=>s.desiredEnabled&&s.daemon?.reachable&&s.onboarding?.initialized);
- assert.equal(dto.daemon.owned,true);checkListeners(true);
+ assert.equal(dto.daemon.owned,true);await checkListeners(true);
  const socket=fs.statSync(socketPath);assert.equal(socket.uid,1001);assert.equal(socket.gid,1002);assert.equal(socket.mode&0o777,0o660);
  const listed=await native('GET','/api/mcp/servers');assert.equal(listed.status,200);
  const entry=listed.body.servers.find(row=>row.id==='woow-paseo');assert.ok(entry);assert.deepEqual(entry.args,['/opt/opendesign-paseo/bin/mcp.mjs']);
@@ -44,7 +71,7 @@ if(mode==='prepare'){
  fs.writeFileSync(checkpoint,JSON.stringify({projectId:dto.onboarding.projectId,conversationId:dto.onboarding.conversationId}),{mode:0o600});
  assert.equal((await request({action:'disable'})).status,202);
  await until(s=>s.desiredEnabled===false&&!s.daemon?.running&&s.operation?.status!=='running');
- checkListeners(false);
+ await checkListeners(false);
  console.log('Paseo smoke: native onboarding/CAS, managed start/stop, socket ownership passed');
 }else{
  const expected=JSON.parse(fs.readFileSync(checkpoint));
@@ -52,6 +79,6 @@ if(mode==='prepare'){
  assert.equal(dto.daemon?.running,false);assert.equal(dto.onboarding.projectId,expected.projectId);assert.equal(dto.onboarding.conversationId,expected.conversationId);
  const projects=await native('GET','/api/projects');assert.equal(projects.status,200);
  assert.equal(projects.body.projects.filter(p=>p.metadata?.woowPaseoInstallation).length,1);
- checkListeners(false);
+ await checkListeners(false);
  console.log('Paseo smoke: manual stop and onboarding identity survive volume restore/restart');
 }
