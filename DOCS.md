@@ -184,9 +184,15 @@ Release maintainers: see [the 0.2.7 packaging/release gate](docs/paseo-release.m
 
 啟動時會在 UID 1001 下收緊 `.codex/auth.json`、`.codex/config.toml`、
 `.claude/.credentials.json`、`.claude/settings.json`、`.pi/agent/auth.json`、
-`.pi/agent/models.json` 與 `.pi/agent/settings.json` 為 `0600`，並將
-`.codex`、`.claude`、`.pi`、`.pi/agent` 設為 `0700`。檔案內容與專案權限不會改動，
+`.pi/agent/models.json`、`.pi/agent/settings.json`、OpenCode 的
+`.config/opencode/opencode.json`、`.config/opencode/opencode.jsonc` 與
+`.local/share/opencode/auth.json` 為 `0600`，並將 `.codex`、`.claude`、`.pi`、
+`.pi/agent`、`.config/opencode`、`.local/share/opencode` 設為 `0700`。
+共享父目錄 `.config`、`.local`、`.local/share` 及未列出的 provider 路徑不會被 chmod。
+檔案內容（包含 JSONC 註解）與專案權限不會改動，
 不存在的設定不會被建立。這補足原生還原可能帶回 `0644` 權限的情況。
+這些是持久化 HOME 中的 CLI 設定／登入資料；瀏覽器內的 API BYOK 設定仍不在備份中。
 
 這些私有路徑必須是一般目錄與單一 hard link 的一般檔案。遇到 symlink、多重
-hard link 或其他非一般檔案時會拒絕啟動，避免將權限修正套用到外部目標。
+hard link 或其他非一般檔案時會拒絕啟動；每一層祖先目錄也拒絕 symlink，
+避免將權限修正套用到外部目標。

@@ -1,12 +1,13 @@
 # Changelog
 
-## Unreleased — native Omnigent packaging (pending core pin and release version)
+## 0.2.8 — candidate (pending core pin and image acceptance)
 
 - Restore the bundled native Omnigent plugin by removing the Dockerfile deletion guard. Require its adapter/host assets and preinstalled SDK 0.16.0 from the reviewed core; retain Claude Code, Codex, Pi and OpenCode as the only engines. The OpenDesign daemon owns host startup/shutdown; the legacy external supervisor stays disabled.
 - Stop retiring Omnigent state on each HA boot. New setup uses the daemon-private `/data/opendesign/integrations/omnigent/host` and must ask for URL/username/password in the GUI. Ignore inherited legacy location overrides; neither `home/.omnigent` nor `.backup/omnigent-*` is automatically adopted or deleted. New setup survives restart/upgrade and cold backup restore.
+- Allow 35 seconds for native cleanup with a 45-second Supervisor timeout; preserve the released Paseo 0.2.7 runtime, backup exclusions, native return navigation and credential-permission restore.
 - Add executable launcher persistence/shutdown tests, native daemon and GUI ingress smoke, and an opt-in real-service candidate harness for four-engine reply/stop, host resume, disable/re-enable/disconnect, cold restore and image upgrade. Preserve existing ingress, terminal, MCP, BYOK and export behavior.
 - **Migration/rollback:** retired users sign in again; already-configured new hosts retain `/data`. Backups contain Omnigent identity/login tokens and legacy archives. Stop the old host before restoring its identity elsewhere; rollback to a release without the integration requires the pre-upgrade backup. No HA option, port, architecture or image name changes.
-- **Not releasable yet:** version stays 0.2.7 and core stays `20261026.0712` (`sha256:366e337d…`), which does not contain the restored Omnigent integration and intentionally fails the new image contract. Main must supply the immutable core pin, retain the merged Paseo 0.2.7 changes, select an unused version and run image/actual-HA acceptance before release. Store/Local Download continue through the existing Release synchronization.
+- **Not releasable yet:** candidate version is 0.2.8 and core stays `20261026.0712` (`sha256:366e337d…`), which does not contain the restored Omnigent integration and intentionally fails the new image contract. Main must supply the immutable core pin, retain the merged Paseo 0.2.7 changes, run image/actual-HA acceptance before release. Store/Local Download continue through the existing Release synchronization.
 
 ## 0.2.7
 
