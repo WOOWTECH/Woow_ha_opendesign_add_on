@@ -12,7 +12,7 @@
 # The coordinator must supply the immutable core tag/digest and reconcile the
 # parallel native integrations before release; do not select a version here.
 # Re-pin all build inputs with .github/scripts/pin-core.sh <tag> <digest>.
-ARG BUILD_FROM=ghcr.io/woowtech/open-design-core:20261026.0712@sha256:366e337dc7ea192526468de33ad3f2f0ce97be3ffba9b8382a0c1d9ab88b1404
+ARG BUILD_FROM=ghcr.io/woowtech/open-design-core:20261026.1751@sha256:14601a0b5c935b09193e7217daf603f2d3dbca2d9a9f3ba6f80d2fe2a406dbe2
 
 # --- Built-in Woow OpenDesign MCP server: admin UI assets (mcp-runtime/, see mcp-runtime/README.md) ---
 # Built with the core image's own Node/npm from the vendored, lock-pinned UI sources; only dist/ is kept.
