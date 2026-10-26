@@ -455,12 +455,6 @@ PY
 docker cp tests/listener-contract.mjs "$container:/tmp/listener-contract.mjs"
 docker cp tests/container-paseo-e2e.mjs "$container:/tmp/container-paseo-e2e.mjs"
 docker exec -u 1001:1001 "$container" node /tmp/container-paseo-e2e.mjs restored
-# Shared MCP entries are installed by the explicit shared-agents sync command,
-# not by container startup. Exercise that command before checking the merged
-# OpenCode config; it must preserve the restored user's provider settings.
-docker exec -u 1001:1001 "$container" ha-opendesign-agents sync >/dev/null
-docker cp tests/credential-permissions-container.py "$container:/tmp/credential-permissions.py"
-docker exec "$container" python3 /tmp/credential-permissions.py verify
 docker logs "$container" >"$tmp/container.log" 2>&1
 grep -Eq '\[ha-opendesign\] returned [0-9]+ path\(s\) under /data/opendesign to open-design' "$tmp/container.log"
 docker exec "$container" sh -ceu '
@@ -481,6 +475,12 @@ docker exec "$container" sh -ceu '
   grep -Fq fake-legacy-not-for-adoption /data/opendesign/home/.omnigent/auth_tokens.json
   grep -Fq fake-archived-not-for-adoption /data/opendesign/.backup/omnigent-retired/auth_tokens.json
 '
+# Shared skills and MCP entries are installed by the explicit sync command,
+# not by container startup. Verify the unsynced restore above first, then
+# check that the merge preserves both OpenCode and Codex user settings.
+docker exec -u 1001:1001 "$container" ha-opendesign-agents sync >/dev/null
+docker cp tests/credential-permissions-container.py "$container:/tmp/credential-permissions.py"
+docker exec "$container" python3 /tmp/credential-permissions.py verify
 docker cp tests/container-omnigent-contract.mjs "$container:/tmp/container-omnigent-contract.mjs"
 docker exec -u 1001:1001 "$container" node /tmp/container-omnigent-contract.mjs restored
 
