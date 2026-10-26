@@ -440,6 +440,10 @@ docker rm "$container" >/dev/null
 # daemon failed with SQLITE_READONLY). Reproduce that on the retained volume;
 # the launcher must hand everything back to open-design before OpenDesign starts.
 docker run --rm --platform linux/amd64 -v "$volume:/data" --entrypoint sh "$image" -ceu '
+  # Disposable fixture: model the sole native backup_exclude subtree. Actual
+  # Supervisor backup/uninstall/fresh restore is a separate native HA gate.
+  test -d /data/opendesign/paseo/packages/runtime/releases
+  rm -rf /data/opendesign/paseo/packages/runtime
   find /data/opendesign -mindepth 1 -exec chown -h 0:0 {} +
   test "$(find /data/opendesign -mindepth 1 -user 0 | wc -l)" -gt 0
 '
@@ -479,6 +483,23 @@ docker exec "$container" sh -ceu '
 '
 docker logs "$container" >"$tmp/container.log" 2>&1
 test "$(grep -c "Omnigent was removed in 0.2.1: moved its state" "$tmp/container.log")" = 1
+
+# The previous restored check resumed Paseo through the GUI action. Repeat
+# with enabled intent, missing runtime files and root-owned restored data;
+# startup must rebuild without an enable request or new onboarding identity.
+docker stop -t 30 "$container" >/dev/null
+test "$(docker inspect -f '{{.State.ExitCode}}' "$container")" = 0
+docker rm "$container" >/dev/null
+docker run --rm --platform linux/amd64 -v "$volume:/data" --entrypoint sh "$image" -ceu '
+  test -d /data/opendesign/paseo/packages/runtime/releases
+  rm -rf /data/opendesign/paseo/packages/runtime
+  find /data/opendesign -mindepth 1 -exec chown -h 0:0 {} +
+'
+start_container
+wait_for_health
+docker cp tests/listener-contract.mjs "$container:/tmp/listener-contract.mjs"
+docker cp tests/container-paseo-e2e.mjs "$container:/tmp/container-paseo-e2e.mjs"
+docker exec -u 1001:1001 "$container" node /tmp/container-paseo-e2e.mjs restored-enabled
 
 # Direct renderer acceptance uses the Chromium and playwright-core installed in
 # the image. It requires no provider key or generation call.

@@ -2,6 +2,14 @@
 
 ## 0.2.7
 
+- Cold backups exclude only the reconstructible Paseo `packages/runtime`
+  directory through native `backup_exclude`, avoiding runtime binary hardlinks
+  that fail Supervisor's streaming restore. Credentials, projects, sessions,
+  daemon identity, enabled intent, provider installations and npm cache are
+  retained. Enabled startup or a later GUI start rebuilds from the bundled
+  exact lock; package-source connectivity is required (offline recovery is
+  not guaranteed). Existing archives are not rewritten.
+
 - Report successful exit after a requested TERM/INT has stopped all supervised processes. The previous launcher propagated the interrupted wait's 143/130 and Supervisor showed `error` after a successful native stop. Unexpected required-process exits still stop peers and return failure. Cold backup had succeeded; restore failure is not claimed.
 - Add the shared native Paseo launcher and supervised runtime with first-install onboarding, official provider login, model testing and pairing setup through HA Ingress.
 - Persist runtime state and explicit manual stop beneath `/data`; share the existing provider home and preserve OpenDesign projects and other MCP entries through the native per-entry CAS API.

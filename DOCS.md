@@ -106,7 +106,28 @@ shut down inside Supervisor's 30-second timeout.
 Paseo state and installed runtime packages live under `/data/opendesign/paseo`;
 provider credentials remain in `/data/opendesign/home`, shared with native
 OpenDesign agent tools. Source material may also live in that home's
-`.local/share/opendesign-paseo`. Cold HA backups include all of `/data`. The
+`.local/share/opendesign-paseo`. Cold HA backups retain these directories,
+including CLI credentials, projects, conversations, daemon identity and the
+saved enabled/disabled choice. They exclude only
+`/data/opendesign/paseo/packages/runtime`, the downloaded Paseo execution
+packages. Home Assistant's native `backup_exclude` prunes that subtree before
+archiving, anchored to Supervisor's `/data/apps/data/<slug>` (or legacy
+`/data/addons/data/<slug>`) root so identically named user project directories
+are retained. Its npm binary hardlinks can otherwise fail Supervisor's streaming
+restore. Provider installations and `packages/npm-cache` remain in the backup.
+
+After restore, an enabled service rebuilds the missing packages from the
+image's exact bundled lock using `npm ci`, then checks the CLI version and web
+UI before starting Paseo. A manually stopped service stays stopped; selecting
+**安裝並啟動** performs the same rebuild. The installed-version record alone is
+not treated as proof that package files exist. Restore therefore requires
+outbound access to the package registry and any locked package download hosts.
+The retained npm cache may reduce downloads, but offline recovery is not
+guaranteed. A failed install retains the enabled intent and the supervisor
+retries with a bounded delay; setup reports installation errors. Restoring
+connectivity allows recovery without deleting credentials or user state.
+This exclusion applies to newly created backups; it does not repair an older
+archive that already contains those hardlinks. The
 bridge code is immutable image content at `/opt/opendesign-paseo`; its private
 socket under `/run/ha-opendesign-paseo` is recreated at start. No bridge port is
 mapped to the LAN, and Supervisor tokens are removed before every child starts.

@@ -1,11 +1,14 @@
 // Runs only inside the disposable container-smoke fixture, not a live HA host.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import path from 'node:path';
+import {createHash} from 'node:crypto';
 import http from 'node:http';
 import {execFileSync} from 'node:child_process';
 import {assertListeners,parseListeners,readProcessTcpListeners} from './listener-contract.mjs';
 import {setTimeout as delay} from 'node:timers/promises';
-const mode=process.argv[2];assert.ok(['prepare','restored'].includes(mode));
+const mode=process.argv[2];assert.ok(['prepare','restored','restored-enabled'].includes(mode));
+const runtimeDir='/data/opendesign/paseo/packages/runtime';
 const prefix='/api/hassio_ingress/'+'a'.repeat(32);
 const socketPath='/run/ha-opendesign-paseo/bridge.sock';
 const checkpoint='/data/opendesign/paseo-smoke.json';
@@ -16,11 +19,36 @@ const request=(body)=>new Promise((resolve,reject)=>{
  }},res=>{let text='';res.on('data',b=>text+=b);res.on('end',()=>{try{resolve({status:res.statusCode,body:JSON.parse(text)});}catch{reject(Error('non-JSON bridge response'));}});});req.on('error',reject);req.setTimeout(15000,()=>req.destroy(Error('bridge timeout')));req.end(body?JSON.stringify(body):undefined);
 });
 async function until(predicate){
- for(let n=0;n<180;n++){
+ for(let n=0;n<420;n++){
   try{const res=await request();if(res.status===200&&predicate(res.body))return res.body;}catch{}
   await delay(1000);
  }
- throw Error('Paseo lifecycle did not settle within 180 seconds');
+ throw Error('Paseo lifecycle did not settle within 420 seconds');
+}
+const json=file=>JSON.parse(fs.readFileSync(file,'utf8'));
+const hash=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+const protectedFiles=[
+ '/data/opendesign/home/.claude/ha-restore-fixture',
+ '/data/opendesign/home/.codex/ha-restore-fixture',
+ '/data/opendesign/home/.pi/agent/ha-restore-fixture',
+ '/data/opendesign/shared/workspaces/ha-restore-fixture',
+ '/data/opendesign/paseo/daemon/ha-restore-fixture',
+];
+function checkPreserved(expected,dto){
+ assert.equal(dto.onboarding.projectId,expected.projectId);
+ assert.equal(dto.onboarding.conversationId,expected.conversationId);
+ assert.equal(json('/data/opendesign/paseo/state.json').installationId,expected.installationId);
+ assert.equal(hash('/data/opendesign/paseo/daemon/.pi-paseo-owner.json'),expected.ownerHash);
+ for(const [file,digest] of Object.entries(expected.files))assert.equal(hash(file),digest,file);
+}
+async function checkRebuilt(){
+ const {runtimeReady,runtimeDirectory}=await import('/opt/opendesign-paseo/vendor/pi-paseo/src/runtime-layout.mjs');
+ assert.equal(runtimeReady({runtimeDir}),true);
+ const root=runtimeDirectory({runtimeDir});
+ assert.equal(hash(path.join(root,'package-lock.json')),hash('/opt/opendesign-paseo/vendor/pi-paseo/runtime/package-lock.json'));
+ assert.equal(json(path.join(root,'node_modules/@getpaseo/cli/package.json')).version,'0.11.2');
+ assert.ok(fs.existsSync(path.join(root,'node_modules/@getpaseo/server/dist/server/web-ui/index.html')));
+ await checkListeners(true);
 }
 const native=async(method,route,body)=>{
  const res=await fetch('http://127.0.0.1:7456'+route,{method,headers:{'Content-Type':'application/json','Sec-Fetch-Site':'same-origin'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(15000)});
@@ -68,17 +96,37 @@ if(mode==='prepare'){
  // A stale expected value must not overwrite the bridge's MCP registration.
  assert.equal((await native('PUT','/api/mcp/servers/woow-paseo',{server:entry,expected:null})).status,409);
  assert.deepEqual((await native('GET','/api/mcp/servers')).body.servers,listed.body.servers);
- fs.writeFileSync(checkpoint,JSON.stringify({projectId:dto.onboarding.projectId,conversationId:dto.onboarding.conversationId}),{mode:0o600});
+ for(const file of protectedFiles)fs.writeFileSync(file,'ha-restore-not-a-secret',{mode:0o600,flag:'wx'});
+ fs.writeFileSync(checkpoint,JSON.stringify({projectId:dto.onboarding.projectId,conversationId:dto.onboarding.conversationId,
+  installationId:json('/data/opendesign/paseo/state.json').installationId,
+  ownerHash:hash('/data/opendesign/paseo/daemon/.pi-paseo-owner.json'),
+  files:Object.fromEntries(protectedFiles.map(file=>[file,hash(file)])),
+ }),{mode:0o600});
  assert.equal((await request({action:'disable'})).status,202);
  await until(s=>s.desiredEnabled===false&&!s.daemon?.running&&s.operation?.status!=='running');
  await checkListeners(false);
  console.log('Paseo smoke: native onboarding/CAS, managed start/stop, socket ownership passed');
-}else{
+}else if(mode==='restored'){
  const expected=JSON.parse(fs.readFileSync(checkpoint));
  const dto=await until(s=>s.pluginInstalled&&s.desiredEnabled===false);
- assert.equal(dto.daemon?.running,false);assert.equal(dto.onboarding.projectId,expected.projectId);assert.equal(dto.onboarding.conversationId,expected.conversationId);
+ assert.equal(dto.daemon?.running,false);checkPreserved(expected,dto);
+ // A saved installedVersion must not substitute for the excluded files.
+ assert.equal(json('/data/opendesign/paseo/state.json').installedVersion,'0.11.2');
+ assert.equal(fs.existsSync(runtimeDir),false);
  const projects=await native('GET','/api/projects');assert.equal(projects.status,200);
  assert.equal(projects.body.projects.filter(p=>p.metadata?.woowPaseoInstallation).length,1);
  await checkListeners(false);
- console.log('Paseo smoke: manual stop and onboarding identity survive volume restore/restart');
+ assert.equal((await request({action:'enable'})).status,202);
+ const enabled=await until(s=>s.desiredEnabled&&s.daemon?.reachable&&s.operation?.status!=='running');
+ checkPreserved(expected,enabled);await checkRebuilt();
+ console.log('Paseo smoke: excluded runtime stays absent while disabled; GUI enable rebuilds exact lock and preserves state');
+}else{
+ // No enable request: restored enabled intent must trigger package recovery.
+ const dto=await until(s=>s.desiredEnabled&&s.daemon?.reachable&&s.onboarding?.initialized);
+ checkPreserved(json(checkpoint),dto);await checkRebuilt();
+ assert.equal((await native('GET','/api/projects')).body.projects.filter(p=>p.metadata?.woowPaseoInstallation).length,1);
+ assert.equal((await request({action:'disable'})).status,202);
+ await until(s=>!s.desiredEnabled&&!s.daemon?.running&&s.operation?.status!=='running');
+ await checkListeners(false);
+ console.log('Paseo smoke: enabled restore automatically rebuilds exact runtime; identities and protected files retained');
 }
