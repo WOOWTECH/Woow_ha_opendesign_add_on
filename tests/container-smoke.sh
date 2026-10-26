@@ -455,6 +455,10 @@ PY
 docker cp tests/listener-contract.mjs "$container:/tmp/listener-contract.mjs"
 docker cp tests/container-paseo-e2e.mjs "$container:/tmp/container-paseo-e2e.mjs"
 docker exec -u 1001:1001 "$container" node /tmp/container-paseo-e2e.mjs restored
+# Shared MCP entries are installed by the explicit shared-agents sync command,
+# not by container startup. Exercise that command before checking the merged
+# OpenCode config; it must preserve the restored user's provider settings.
+docker exec -u 1001:1001 "$container" ha-opendesign-agents sync >/dev/null
 docker cp tests/credential-permissions-container.py "$container:/tmp/credential-permissions.py"
 docker exec "$container" python3 /tmp/credential-permissions.py verify
 docker logs "$container" >"$tmp/container.log" 2>&1
