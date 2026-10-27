@@ -12,6 +12,8 @@ init: false
 timeout: 45
 ingress: true
 ingress_port: 8099
+# Supervisor appends this to /api/hassio_ingress/<token>/; no leading slash.
+ingress_entry: plugins
 ingress_stream: true
 panel_icon: mdi:palette-outline
 panel_title: OpenDesign

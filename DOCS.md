@@ -8,7 +8,7 @@ Use OpenDesign's native **API BYOK** controls in Settings. Provider, model, and 
 
 ## Access and persistence
 
-Use **Open Web UI** or the **OpenDesign** sidebar item. OpenDesign itself is ingress-only; the only declared LAN port is the optional built-in MCP endpoint below, which is not mapped unless you map it.
+Use **Open Web UI** or the **OpenDesign** sidebar item. In the 0.2.9 candidate, **Open Web UI** enters the native **Plugins** page so Omnigent can be opened from its card. OpenDesign itself is ingress-only; the only declared LAN port is the optional built-in MCP endpoint below, which is not mapped unless you map it.
 
 Projects, the OpenDesign database, application configuration, connector data, and generated state are stored beneath `/data/opendesign`. API BYOK credentials are deliberately excluded. The add-on requests cold backup so this directory is captured while the service is stopped.
 
@@ -59,9 +59,9 @@ The core image also provides Claude Code `2.1.296`, Codex CLI `0.162.1`, and Pi 
 
 ## Omnigent 0.2.9 candidate
 
-**Version 0.2.9 is a candidate.** It follows the 0.2.8 Paseo release and keeps its public, approved w2.7 core `20261026.1751` / `sha256:14601a0b5c935b09193e7217daf603f2d3dbca2d9a9f3ba6f80d2fe2a406dbe2`, which contains the native Omnigent integration. The 0.2.8 HA shell omitted Omnigent; this version restores its plugin and daemon-managed host. Stable release still requires this source's image and actual HA acceptance.
+**Version 0.2.9 is a candidate.** It follows the 0.2.8 Paseo release and currently pins the public, approved w2.7 core `20261026.1751` / `sha256:14601a0b5c935b09193e7217daf603f2d3dbca2d9a9f3ba6f80d2fe2a406dbe2`, which contains the native Omnigent integration. An isolated Supervisor install, cold upgrade and restart passed with the first candidate image. Browser testing then found that first-run onboarding redirects the Omnigent settings popup; a new core pin and full connected GUI acceptance are required before stable release.
 
-With that core, open **Plugins → Omnigent → Open → Configure**. The native GUI asks for the Omnigent HTTPS server URL, username and password. It discovers only the four engines already in the image: Claude Code, Codex, Pi and OpenCode. Their provider sign-ins are separate; the integration does not install missing provider engines. Complete setup to see available models/modules and the real reply/stop verification results. No Omnigent credentials go into HA add-on options.
+Choose **Open Web UI → Plugins → Omnigent → Open → Configure**. The native GUI asks for the Omnigent HTTPS server URL, username and password. It discovers only the four engines already in the image: Claude Code, Codex, Pi and OpenCode. Their provider sign-ins are separate; the integration does not install missing provider engines. Complete setup to see available models/modules and the real reply/stop verification results. No Omnigent credentials go into HA add-on options. On the current w2.7 core, a fresh installation's settings popup redirects to onboarding; use the next validated candidate for this flow.
 
 The native OpenDesign daemon owns the host and its lifecycle. The HA launcher continues to start OpenDesign directly and waits for its shutdown; there is no second `/etc/omnigent-host` supervisor. The chart's legacy `omnigentHost.enabled=false` remains correct. Native state lives in `/data/opendesign/integrations/omnigent/state.json`, with private host configuration, identity and tokens under `/data/opendesign/integrations/omnigent/host/`. The service derives this from `OD_DATA_DIR`. HA does not set a global `OMNIGENT_CONFIG_HOME`; the launcher clears inherited legacy `OMNIGENT_CONFIG_HOME`, `OMNIGENT_DATA_DIR` and `OG_*` location overrides before starting children.
 
