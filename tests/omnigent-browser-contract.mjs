@@ -12,6 +12,10 @@ export async function checkOmnigentSetup(pluginsPage, prefix) {
   try {
     const section = page.getByTestId('omnigent-integration-section');
     await section.waitFor({ timeout: 30_000 });
+    assert.equal(new URL(page.url()).pathname, `${prefix}/settings/omnigent`);
+    const reloaded = await page.reload({ waitUntil: 'domcontentloaded', timeout: 30_000 });
+    assert.equal(reloaded.status(), 200, 'plugin settings reload must stay inside HA Ingress');
+    await section.waitFor({ timeout: 30_000 });
     await section.getByRole('button', { name: 'Configure', exact: true }).click();
     const dialog = page.getByTestId('omnigent-setup-dialog');
     await dialog.waitFor({ timeout: 30_000 });

@@ -169,7 +169,7 @@ try {
   const firstRunPaseo = firstRunPlugins.getByTestId('plugins-card-open-woow-paseo');
   const firstRunOmnigent = firstRunPlugins.getByTestId('plugins-card-open-woow-omnigent');
   await Promise.all([firstRunPaseo.waitFor({ timeout: 30_000 }), firstRunOmnigent.waitFor({ timeout: 30_000 })]);
-  assert.notEqual(new URL(firstRunPlugins.url()).pathname, '/onboarding', 'fresh /plugins must not redirect to model onboarding');
+  assert.equal(new URL(firstRunPlugins.url()).pathname, `${prefix}/plugins`, 'fresh /plugins must stay inside HA Ingress');
   assert.equal(await firstRunPaseo.getAttribute('href'), `${prefix}/paseo/setup/`);
   assert.equal(await firstRunPaseo.getAttribute('target'), '_blank');
   assert.equal(await firstRunOmnigent.getAttribute('href'), `${prefix}/settings/omnigent`);
@@ -266,7 +266,7 @@ try {
     throw error;
   }
   // Setup is an explicit native plugin action; an unrelated home tab stays home.
-  assert.equal(new URL(page.url()).pathname, '/', 'ingress transport prefix must be hidden from OpenDesign route logic');
+  assert.equal(new URL(page.url()).pathname, `${prefix}/`, 'ingress transport prefix must remain reloadable');
   // OpenDesign 0.24.1: with the sidebar collapsed the nav-rail buttons sit
   // under the main pane, expanding it re-renders (detaches) them, and two
   // buttons are named Settings. Expand first, let the layout settle, click the
@@ -280,7 +280,7 @@ try {
           await page.waitForTimeout(500);
         }
         await locator().click({ timeout: 10_000 });
-        await page.waitForURL((url) => url.pathname === pathname, { timeout: 10_000 });
+        await page.waitForURL((url) => url.pathname === `${prefix}${pathname}`, { timeout: 10_000 });
         return;
       } catch (error) {
         if (attempt >= 3) throw error;
