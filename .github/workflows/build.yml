@@ -123,6 +123,15 @@ jobs:
             BUILD_REPOSITORY=${{ github.repository }}
           cache-from: type=gha,scope=opendesign-${{ matrix.arch }}
           cache-to: type=gha,scope=opendesign-${{ matrix.arch }},mode=max
+      # The SBOM of this image is what the Upgrade comparison scans as the
+      # new version (pipeline #89, category 4): pinned Syft from the Store,
+      # uploaded as artifact upgrade-comparison-sbom-woow_ha_opendesign.
+      - name: SBOM for the upgrade comparison
+        if: github.event_name == 'pull_request' && matrix.arch == 'amd64'
+        uses: WOOWTECH/Woow_HA_App_Store/.github/actions/addon-sbom@cc3ae7b49695900ee7fcf1700eca6a829421a18b # Store #89 integration branch; bump to the post-merge Store main SHA
+        with:
+          component: woow_ha_opendesign
+          image: ghcr.io/woowtech/woow-ha-opendesign-${{ matrix.arch }}:${{ steps.metadata.outputs.version }}
       - name: Verify bundled agent CLIs as UID 1001
         run: |
           docker run --rm --platform ${{ matrix.platform }} --user 1001:1001 \
@@ -141,6 +150,28 @@ jobs:
               command -v pi >/dev/null
               test ! -e /opt/ha-opendesign/ha-pi-wrapper.mjs
             '
+
+  # Upgrade comparison (pipeline #89): a PR that bumps the add-on version is
+  # compared with the newest formal Release. A breaking config.yaml change
+  # not declared in upgrade-notes.yaml blocks it, and so does a new fixable
+  # Critical/High vulnerability in the amd64 image (the SBOM from
+  # build-nonrelease against the Release's GHCR image) unless that file
+  # accepts it. No needs: on the build, so a PR that changes no version
+  # passes in seconds; after a version bump the job waits for this run's SBOM
+  # artifact (actions: read) and fails if build-nonrelease never uploads it.
+  # On push and dispatch the job passes at once, so this workflow's non-PR run
+  # (registry required_workflows) still succeeds. Reported as
+  # "Upgrade comparison / compare". build-nonrelease reads the same gha cache
+  # scope as publish-release on main (a PR can read main's cache, main never
+  # reads a PR's), so the SBOM is of the layers the Release build reuses.
+  upgrade-comparison:
+    name: Upgrade comparison
+    permissions:
+      contents: read
+      actions: read
+    uses: WOOWTECH/Woow_HA_App_Store/.github/workflows/woow-addon-upgrade-check.yml@cc3ae7b49695900ee7fcf1700eca6a829421a18b # Store #89 integration branch; bump to the post-merge Store main SHA
+    with:
+      sbom_artifact: upgrade-comparison-sbom-*
 
   # A dispatch on a review branch builds and tests the candidate locally, then
   # pushes those exact bytes to a unique prerelease tag. No Store Release/tag.
@@ -442,4 +473,4 @@ jobs:
     # Pinned like every action here (tests/validate.py). The pinned workflow still runs
     # the Store main tooling and registry, so only a change to the workflow file
     # itself needs a new pin.
-    uses: WOOWTECH/Woow_HA_App_Store/.github/workflows/woow-addon-release.yml@2cf52485fef8f44771250c92ee73680d8b5b1619 # main 2026-10-12
+    uses: WOOWTECH/Woow_HA_App_Store/.github/workflows/woow-addon-release.yml@cc3ae7b49695900ee7fcf1700eca6a829421a18b # Store #89 integration branch; bump to the post-merge Store main SHA
