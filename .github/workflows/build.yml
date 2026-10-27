@@ -128,7 +128,7 @@ jobs:
       # uploaded as artifact upgrade-comparison-sbom-woow_ha_opendesign.
       - name: SBOM for the upgrade comparison
         if: github.event_name == 'pull_request' && matrix.arch == 'amd64'
-        uses: WOOWTECH/Woow_HA_App_Store/.github/actions/addon-sbom@cc3ae7b49695900ee7fcf1700eca6a829421a18b # Store #89 integration branch; bump to the post-merge Store main SHA
+        uses: WOOWTECH/Woow_HA_App_Store/.github/actions/addon-sbom@cc3ae7b49695900ee7fcf1700eca6a829421a18b
         with:
           component: woow_ha_opendesign
           image: ghcr.io/woowtech/woow-ha-opendesign-${{ matrix.arch }}:${{ steps.metadata.outputs.version }}
@@ -169,8 +169,9 @@ jobs:
     permissions:
       contents: read
       actions: read
-    uses: WOOWTECH/Woow_HA_App_Store/.github/workflows/woow-addon-upgrade-check.yml@cc3ae7b49695900ee7fcf1700eca6a829421a18b # Store #89 integration branch; bump to the post-merge Store main SHA
+    uses: WOOWTECH/Woow_HA_App_Store/.github/workflows/woow-addon-upgrade-check.yml@cc3ae7b49695900ee7fcf1700eca6a829421a18b
     with:
+      tooling_ref: cc3ae7b49695900ee7fcf1700eca6a829421a18b
       sbom_artifact: upgrade-comparison-sbom-*
 
   # A dispatch on a review branch builds and tests the candidate locally, then
