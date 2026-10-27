@@ -9,11 +9,10 @@
 # The shared core contains Omnigent for PaaS, while this HA shell does not expose
 # its plugin or skill. The removal step below enforces that HA boundary.
 #
-# The core is published as the public ghcr.io/woowtech/open-design-core,
-# copied from the PaaS registry by digest (core 20261026.1751 from approved
-# build 29406 / promotion 29440, fork woow-od-v0.24.1-w2.7). Bump with
-# .github/scripts/pin-core.sh <tag> <digest> (rewrites every pin).
-ARG BUILD_FROM=ghcr.io/woowtech/open-design-core:20261026.1751@sha256:14601a0b5c935b09193e7217daf603f2d3dbca2d9a9f3ba6f80d2fe2a406dbe2
+# The approved 20261027.0212 core digest is staged for the public GHCR copy.
+# Release builds must verify that the public tag resolves to this same digest.
+# Bump with .github/scripts/pin-core.sh <tag> <digest> (rewrites every pin).
+ARG BUILD_FROM=ghcr.io/woowtech/open-design-core:20261027.0212@sha256:dde1a88f9c35f6588b9c61e8088dabfb8b337dddf3d4c9c998f1488bd38b3351
 
 # --- Built-in Woow OpenDesign MCP server: admin UI assets (mcp-runtime/, see mcp-runtime/README.md) ---
 # Built with the core image's own Node/npm from the vendored, lock-pinned UI sources; only dist/ is kept.

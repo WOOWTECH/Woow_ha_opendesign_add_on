@@ -3,7 +3,7 @@
 ## 0.2.9
 
 - Update the bundled Paseo runtime from 0.2.1 to the public 0.2.2 release. Its setup page recognizes Claude Code's official `claude.com` authorization URL, accepts the authorization code in the protected page, sends it to the Claude CLI, and waits up to 15 minutes for the provider to complete login.
-- Keep the OpenDesign core at the same immutable 20261026.1751 digest and retain the existing add-on slug, architecture, Ingress routes, options, data paths, projects, provider homes, and backup exclusions. Updating from 0.2.8 requires no data migration; a provider account that is not signed in still needs its own official authorization.
+- Pin the approved shared OpenDesign core `20261027.0212` digest for public GHCR publication. The add-on keeps its slug, architecture, Ingress routes, options, data paths, provider homes, and backup exclusions. A provider account that is not signed in still needs its own official authorization. The new core requires fresh image and HAOS upgrade acceptance before this version is released.
 
 ## 0.2.8
 

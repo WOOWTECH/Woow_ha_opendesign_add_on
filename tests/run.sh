@@ -13,6 +13,7 @@ bash -n mcp-runtime/tests/e2e/run-proof.sh
 bash -n mcp-runtime/tests/e2e/run-upgrade-proof.sh
 python3 tests/workflow-policy.test.py
 python3 tests/candidate-release.test.py
+python3 -B tests/verify-public-core.test.py
 python3 tests/backup-exclude.test.py
 python3 -B tests/ha-return.test.py
 python3 -B tests/credential-permissions.test.py

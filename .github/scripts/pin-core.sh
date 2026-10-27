@@ -3,8 +3,10 @@
 #
 #   .github/scripts/pin-core.sh <tag YYYYMMDD.HHMM> <sha256:digest>
 #
-# The core must already be published as ghcr.io/woowtech/open-design-core:<tag> with that digest
-# (.github/scripts/import-core.sh). Rewrites the current pin (read from the Dockerfile) in:
+# A review branch may stage a verified approved digest before the public copy
+# exists. Before merging a version bump, the public GHCR tag must resolve to
+# that exact digest and the image/HAOS acceptance gates must pass. This script
+# rewrites the current pin (read from the Dockerfile) in:
 # Dockerfile (BUILD_FROM), build.yaml (tag only: Supervisor's local builder rejects digests),
 # .github/workflows/build.yml (CORE_IMAGE), tests/validate.py and tests/core-base.test.mjs, then
 # checks that no file still names the old pin. Review the core contract ARGs in the Dockerfile

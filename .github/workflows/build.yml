@@ -16,9 +16,9 @@ permissions:
   contents: read
 
 env:
-  # Shared WoowTech OpenDesign core image (PaaS open-design image), published as
-  # the public ghcr.io/woowtech/open-design-core, pinned by digest (same as Dockerfile).
-  CORE_IMAGE: ghcr.io/woowtech/open-design-core:20261026.1751@sha256:14601a0b5c935b09193e7217daf603f2d3dbca2d9a9f3ba6f80d2fe2a406dbe2
+  # Shared WoowTech OpenDesign core image, pinned by approved digest. The public
+  # GHCR tag must exist with that digest before image builds and release can pass.
+  CORE_IMAGE: ghcr.io/woowtech/open-design-core:20261027.0212@sha256:dde1a88f9c35f6588b9c61e8088dabfb8b337dddf3d4c9c998f1488bd38b3351
 
 # A newer push may cancel a pull request run, never a main run: that one may be
 # publishing a release.
@@ -57,6 +57,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Verify public core tag matches approved digest
+        run: python3 .github/scripts/verify-public-core.py "$CORE_IMAGE"
       - name: Set up Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
       - name: Build amd64 smoke image
@@ -162,6 +164,9 @@ jobs:
       - name: Validate candidate scope and immutable core
         id: candidate
         run: python3 .github/scripts/candidate-release.py plan
+      - name: Verify public candidate core tag matches approved digest
+        if: startsWith(steps.candidate.outputs.core, 'ghcr.io/')
+        run: python3 .github/scripts/verify-public-core.py "$CANDIDATE_CORE_IMAGE"
       - name: Set up Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
       - name: Log in to JCR for candidate core read

@@ -49,6 +49,10 @@ nonrelease_text = yaml.safe_dump(nonrelease)
 check(set(nonrelease.get("needs", [])) == {"validate", "smoke"}, "non-release architecture builds must require validation and smoke")
 check("push: false" in nonrelease_text, "non-release architecture builds must never push")
 check("docker/login-action" not in nonrelease_text, "non-release architecture builds must not receive registry credentials")
+smoke_steps = jobs.get("smoke", {}).get("steps", [])
+smoke_names = [step.get("name") for step in smoke_steps]
+smoke_gate = next((step for step in smoke_steps if step.get("name") == "Verify public core tag matches approved digest"), {})
+check("verify-public-core.py" in str(smoke_gate.get("run", "")) and "Verify public core tag matches approved digest" in smoke_names and "Set up Buildx" in smoke_names and smoke_names.index("Verify public core tag matches approved digest") < smoke_names.index("Set up Buildx"), "PR smoke must verify the public core tag before build")
 
 preflight = jobs.get("release-preflight", {})
 preflight_job_text = yaml.safe_dump(preflight)
@@ -111,6 +115,8 @@ steps = candidate.get("steps", [])
 step_names = [step.get("name") for step in steps]
 ordered = ["Validate candidate scope and immutable core", "Build candidate locally", "Full candidate container smoke", "Refuse existing candidate tag", "Log in to GHCR after smoke", "Push tested candidate and verify anonymous manifest"]
 check(all(name in step_names for name in ordered) and [step_names.index(name) for name in ordered] == sorted(step_names.index(name) for name in ordered), "candidate must smoke before credentials/push with immutable preflight")
+candidate_gate = next((step for step in steps if step.get("name") == "Verify public candidate core tag matches approved digest"), {})
+check("verify-public-core.py" in str(candidate_gate.get("run", "")) and "steps.candidate.outputs.core" in str(candidate_gate.get("if", "")) and "Verify public candidate core tag matches approved digest" in step_names and "Build candidate locally" in step_names and step_names.index("Verify public candidate core tag matches approved digest") < step_names.index("Build candidate locally"), "public candidate core tag must be verified before build")
 build = next((step for step in steps if step.get("name") == "Build candidate locally"), {})
 check(build.get("with", {}).get("load") is True and build.get("with", {}).get("push") is False, "candidate build must load without publishing")
 check('run: ./tests/container-smoke.sh "$CANDIDATE_IMAGE"' in workflow_text, "candidate must run full container suite")

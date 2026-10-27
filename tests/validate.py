@@ -42,10 +42,10 @@ check(config.get("options") == {} and config.get("schema") == {}, "add-on option
 check("map" not in config, "host/add-on path maps are forbidden")
 check(config.get("image") == "ghcr.io/woowtech/woow-ha-opendesign-{arch}", "architecture image pattern mismatch")
 # The add-on derives from the shared WoowTech OpenDesign core image. Every build
-# input names the same published core (digest for CI/Dockerfile, its immutable
-# tag for Supervisor local builds), so no build can fall back to upstream OpenDesign.
-core_image = "ghcr.io/woowtech/open-design-core:20261026.1751@sha256:14601a0b5c935b09193e7217daf603f2d3dbca2d9a9f3ba6f80d2fe2a406dbe2"
-local_core_image = "ghcr.io/woowtech/open-design-core:20261026.1751"
+# input names the same approved core (digest for CI/Dockerfile, its matching
+# tag for Supervisor local builds); release requires public tag verification.
+core_image = "ghcr.io/woowtech/open-design-core:20261027.0212@sha256:dde1a88f9c35f6588b9c61e8088dabfb8b337dddf3d4c9c998f1488bd38b3351"
+local_core_image = "ghcr.io/woowtech/open-design-core:20261027.0212"
 check(build.get("build_from") == {"amd64": local_core_image}, "Supervisor local builds must use the core image (tag syntax, amd64 only)")
 check("nexu-io/od" not in (ROOT / "build.yaml").read_text(), "build.yaml must not fall back to the upstream OpenDesign image")
 check(package.get("dependencies") == {"playwright-core": "1.55.0"}, "renderer dependency must remain exactly pinned")
