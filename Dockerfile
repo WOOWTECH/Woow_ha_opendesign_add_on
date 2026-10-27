@@ -7,10 +7,10 @@
 # built-in Woow OpenDesign MCP server (mcp-runtime/).
 #
 # Omnigent is managed by the native daemon, including its private host state.
-# The approved w2.7 core is published publicly from the PaaS image by digest;
+# The approved w2.8 core is published publicly from the PaaS image by digest;
 # it contains the native integration and preinstalled SDK. Keep Dockerfile, CI,
 # tests and the Supervisor local-build tag aligned with pin-core.sh.
-ARG BUILD_FROM=ghcr.io/woowtech/open-design-core:20261026.1751@sha256:14601a0b5c935b09193e7217daf603f2d3dbca2d9a9f3ba6f80d2fe2a406dbe2
+ARG BUILD_FROM=ghcr.io/woowtech/open-design-core:20261027.0122@sha256:dde1a88f9c35f6588b9c61e8088dabfb8b337dddf3d4c9c998f1488bd38b3351
 
 # --- Built-in Woow OpenDesign MCP server: admin UI assets (mcp-runtime/, see mcp-runtime/README.md) ---
 # Built with the core image's own Node/npm from the vendored, lock-pinned UI sources; only dist/ is kept.
@@ -106,7 +106,7 @@ RUN python3 /tmp/ha-patches/sign-in-hint.py /app/apps/web/out \
     && rm -rf /tmp/ha-patches
 
 # Same immutable shared runtime as the PaaS wrapper; it owns no core patches.
-# Require the native launcher and atomic MCP CAS in the pinned w2.7 core;
+# Require the native launcher and atomic MCP CAS in the pinned w2.8 core;
 # older cores fail this gate instead of silently omitting Paseo.
 COPY paseo-runtime/ /tmp/paseo-runtime/
 RUN sh /tmp/paseo-runtime/install.sh && rm -rf /tmp/paseo-runtime
