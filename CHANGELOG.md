@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.9 — candidate (image and HA acceptance pending)
+## 0.2.10 — candidate (image and HA acceptance pending)
 
 - Restore the bundled native Omnigent plugin by removing the Dockerfile deletion guard. Require its adapter/host assets and preinstalled SDK 0.16.0 from the reviewed core; retain Claude Code, Codex, Pi and OpenCode as the only engines. The OpenDesign daemon owns host startup/shutdown; the legacy external supervisor stays disabled.
 - Stop retiring Omnigent state on each HA boot. New setup uses the daemon-private `/data/opendesign/integrations/omnigent/host` and must ask for URL/username/password in the GUI. Ignore inherited legacy location overrides; neither `home/.omnigent` nor `.backup/omnigent-*` is automatically adopted or deleted. New setup survives restart/upgrade and cold backup restore.
@@ -12,7 +12,7 @@
 ## 0.2.8
 
 - Pin the approved public w2.7 OpenDesign core for the Paseo runtime and make its plugin card available before model onboarding.
-- This release does not expose the bundled Omnigent plugin in Home Assistant; Omnigent HA setup is introduced in the 0.2.9 candidate above.
+- This release does not expose the bundled Omnigent plugin in Home Assistant; Omnigent HA setup is introduced in the 0.2.10 candidate above.
 
 ## 0.2.7
 

@@ -10,7 +10,7 @@ This records the additional source checks after the packaging patch. It is not i
 
 ## Merged source validation
 
-The feature branch now incorporates HA main 0.2.8 (`28e5a3cabb5852391173cfc65645f80d6dd3e400`) and reserves candidate version 0.2.9. The previous 0.2.8 Omnigent candidate passed full container smoke, but another 0.2.8 change merged first and omitted the HA Omnigent plugin. This next-version source must pass its own image, Ingress and real HA checks. The existing MCP/import checks, real nginx syntax check and nine credential-permission cases remain in the suite.
+The feature branch now incorporates HA main 0.2.8 (`28e5a3cabb5852391173cfc65645f80d6dd3e400`) and reserves candidate version 0.2.10. The previous 0.2.8 Omnigent candidate passed full container smoke, but another 0.2.8 change merged first and omitted the HA Omnigent plugin. This next-version source must pass its own image, Ingress and real HA checks. The existing MCP/import checks, real nginx syntax check and nine credential-permission cases remain in the suite.
 
 ## Remaining release gates
 
