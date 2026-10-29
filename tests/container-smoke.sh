@@ -91,7 +91,7 @@ sibling_status() {
   docker run --rm --platform linux/amd64 --network "$net" --ip "$sibling_ip" --entrypoint curl "$image" \
     -sS -o /dev/null -w '%{http_code}' --max-time 15 "$@"
 }
-for route in / /console/ /terminal/ /api/health /api/integrations/omnigent/status /ha-ingress.js /ha-export-bridge.js /_woow/support \
+for route in / /console/ /api/health /api/integrations/omnigent/status /ha-ingress.js /ha-export-bridge.js \
   /mcp-admin/ /api/paseo-bridge /paseo/setup/; do
   status=$(sibling_status "http://${addon_ip}:8099${route}")
   if [[ "$status" != 403 ]]; then
@@ -99,6 +99,23 @@ for route in / /console/ /terminal/ /api/health /api/integrations/omnigent/statu
     exit 1
   fi
 done
+# nginx runs `return` in its rewrite phase, before allow/deny is evaluated, so the redirect-only routes answer any peer. They return a bare redirect
+# to a relative or fixed target and expose nothing; tests/validate.py pins that every `return` in the server block is a redirect, never content.
+sibling_redirect() {
+  local route=$1 target=$2 headers
+  headers=$(docker run --rm --platform linux/amd64 --network "$net" --ip "$sibling_ip" --entrypoint curl "$image" \
+    -sS -o /dev/null -D - --max-time 15 "http://${addon_ip}:8099${route}")
+  if ! grep -Eq '^HTTP/1\.1 30[12]' <<<"$headers" || ! grep -Fqx "Location: ${target}"$'\r' <<<"$headers"; then
+    echo "a sibling container got an unexpected answer for ${route} (wanted a bare redirect to ${target}):" >&2
+    echo "$headers" >&2
+    exit 1
+  fi
+}
+sibling_redirect /console /console/
+sibling_redirect /terminal /console/
+sibling_redirect /terminal/ /console/
+sibling_redirect /mcp-admin /mcp-admin/
+sibling_redirect /_woow/support https://aiot.woowtech.io/woow
 # Loopback (processes inside this container, the in-container tests below) stays admitted, but /mcp-admin keeps its own Ingress-peer-only rule.
 test "$(docker exec "$container" curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8099/api/health)" = 200
 test "$(docker exec "$container" curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8099/mcp-admin/)" = 403

@@ -87,6 +87,10 @@ server_head = [l.strip() for l in server_block.splitlines() if l.strip() and not
 check(server_head == ["allow 172.30.32.2;", "allow 127.0.0.1;", "deny all;"],
       "the 8099 server block must start with allow 172.30.32.2; allow 127.0.0.1; deny all;")
 check("allow 127.0.0.1;" not in server_block.split("location = /mcp-admin", 1)[1], "no location may re-admit loopback after the server-level rules")
+# `return` runs in nginx's rewrite phase, before allow/deny: in this server block it may only issue redirects (301/302) or refusals (403), never content.
+returns = re.findall(r"^\s*return\s+(\d+)", server_block, re.M)
+check(returns and all(code in ("301", "302", "403") for code in returns),
+      "a `return` in the 8099 server block bypasses the peer rules (rewrite phase): only 301/302/403 are allowed, never a content response")
 check("chown -R root:root /opt/ha-opendesign" in dockerfile and "chown -R open-design:open-design /opt/ha-opendesign" not in dockerfile,
       "/opt/ha-opendesign must be root-owned: UID 1001 (agents, Omnigent sessions) must not rewrite scripts served into the HA browser")
 
