@@ -4,7 +4,7 @@
 
 - Update the bundled Paseo runtime from 0.2.2 to the public 0.2.3 release. Provider home directories (`.codex`, `.claude`, `.pi/agent`) are created when the runtime context is built, so a service whose home volume lacks them no longer fails the Codex login or answers 503 for the Codex model list (this add-on's start script already created them). A model catalog that was cached empty (Pi before its login) or failed (a provider that could not start) is refreshed once and read again, so Pi models appear after login without restarting Paseo.
 - The 0.2.3 package also contains the managed-runtime support merged as plugin PR #5. This add-on does not ship a managed runtime, so the runtime is still installed from the lock at first start. One visible difference: a **new** Paseo daemon home (a first install, or a restore without Paseo state) now starts with local dictation and voice mode off, so Paseo no longer downloads about 0.7 GiB of speech models from github.com when the daemon starts; an existing daemon home or an explicit choice is never changed.
-- No option, port, architecture, image name, core digest (still w2.10 `20261027.1127`) or data-layout change; existing provider directories are left untouched. Upgrading from 0.2.10 needs no migration.
+- No option, port, architecture, image name, core digest or data-layout change: the core is still the w2.10 core `sha256:c8cd57f0…`, now named by its PaaS release tag `20261029.0033` (an additional tag for the same digest that 0.2.10 pinned as `20261027.1127`), so the add-on and the PaaS image share one core name. Existing provider directories are left untouched. Upgrading from 0.2.10 needs no migration.
 
 ## 0.2.10
 
