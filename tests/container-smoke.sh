@@ -210,8 +210,15 @@ docker exec "$container" sh -ceu '
   done
   # Paseo may still be installing. Check public binds now; the lifecycle
   # fixture below checks the exact full set after both start and manual stop.
-  public=$(netstat -ltn | awk "/LISTEN/ { print \$4 }" | grep -v "^127\.0\.0\.1:" | sort)
-  test "$public" = "$(printf "%s\n" 0.0.0.0:8081 0.0.0.0:8099 | sort)"
+  # Everything in 127.0.0.0/8 is loopback: on a user-defined network (this
+  # smoke network, and the hassio network of Supervisor) Docker adds its
+  # embedded DNS resolver as one more TCP listener on 127.0.0.11.
+  public=$(netstat -ltn | awk "/LISTEN/ { print \$4 }" | grep -Ev "^127\." | sort)
+  want=$(printf "%s\n" 0.0.0.0:8081 0.0.0.0:8099 | sort)
+  if [ "$public" != "$want" ]; then
+    echo "unexpected public TCP listeners: $public" >&2
+    exit 1
+  fi
 '
 docker exec "$container" python3 -c '
 import json, urllib.error, urllib.request
