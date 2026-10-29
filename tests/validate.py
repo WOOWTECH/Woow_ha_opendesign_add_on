@@ -27,7 +27,7 @@ with (ROOT / ".github/workflows/build.yml").open() as handle:
 check(isinstance(workflow, dict) and "jobs" in workflow, "GitHub Actions workflow YAML is invalid")
 check(set(repository) == {"name", "url", "maintainer"}, "repository.yaml must have the repository contract keys")
 check(repository.get("url") == "https://github.com/WOOWTECH/Woow_ha_opendesign_add_on", "repository URL mismatch")
-check(config.get("version") == "0.2.11", "release version must be 0.2.11")
+check(config.get("version") == "0.2.12", "release version must be 0.2.12")
 check("browser-local API BYOK" in config.get("description", ""), "add-on description must describe browser-local BYOK")
 check(config.get("arch") == ["amd64"], "the core image is amd64-only; only amd64 is allowed")
 check(config.get("ingress") is True, "ingress must be enabled")
@@ -78,7 +78,18 @@ check(len(re.findall(r'^start_child \w+ \\\n  "\$\{no_supervisor_env\[@\]\}" ', 
 check('"${no_supervisor_env[@]}" /opt/woow/bin/ha-opendesign-mcp' in launcher, "launcher must start the built-in MCP server")
 check("RUN python3 /tmp/ha-patches/sign-in-hint.py /app/apps/web/out" in dockerfile, "HA sign-in hint patch must run on the core web build")
 check("sh /tmp/mcp-runtime/install.sh" in dockerfile and "FROM ${BUILD_FROM} AS woow-mcp-ui" in dockerfile, "built-in MCP install missing")
-check("proxy_pass http://unix:/run/ha-opendesign-mcp/admin.sock:/;" in nginx and nginx.count("allow 172.30.32.2;") == 2 and nginx.count("deny all;") == 2, "MCP admin must be Ingress-peer only over the Unix socket")
+check("proxy_pass http://unix:/run/ha-opendesign-mcp/admin.sock:/;" in nginx and nginx.count("allow 172.30.32.2;") == 3 and nginx.count("deny all;") == 3, "MCP admin must be Ingress-peer only over the Unix socket")
+# Server-level source restriction (0.2.12): the first directives of the 8099 server block admit only the Supervisor Ingress gateway and
+# loopback. Without them every other container on the hassio network (and HA Core on the host network) reached the UI/API, the writable
+# /console/ terminal and the Omnigent API with no credentials. Locations that declare their own allow/deny (/mcp-admin, Paseo) replace them.
+server_block = nginx.split("listen 8099 default_server;", 1)[1]
+server_head = [l.strip() for l in server_block.splitlines() if l.strip() and not l.strip().startswith("#")][:3]
+check(server_head == ["allow 172.30.32.2;", "allow 127.0.0.1;", "deny all;"],
+      "the 8099 server block must start with allow 172.30.32.2; allow 127.0.0.1; deny all;")
+check("allow 127.0.0.1;" not in server_block.split("location = /mcp-admin", 1)[1], "no location may re-admit loopback after the server-level rules")
+check("chown -R root:root /opt/ha-opendesign" in dockerfile and "chown -R open-design:open-design /opt/ha-opendesign" not in dockerfile,
+      "/opt/ha-opendesign must be root-owned: UID 1001 (agents, Omnigent sessions) must not rewrite scripts served into the HA browser")
+
 check("npm" not in launcher.lower(), "launcher must not download/install CLI packages at startup")
 check("shared-agents.mjs" not in launcher, "OpenDesign-native plugin/skill registries must not be replaced by startup symlinks")
 for setting in ["HA_OPENDESIGN_HOME=", "CLAUDE_CONFIG_DIR=", "CODEX_HOME=", "PI_CODING_AGENT_DIR=", "XDG_CONFIG_HOME="]:

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.12
+
+- **Security: only the Supervisor Ingress gateway may reach the add-on's web port.** nginx on port 8099 now admits only `172.30.32.2` (Supervisor Ingress) and loopback for every route; `/mcp-admin` and Paseo keep their own stricter peer-only rules (loopback is refused there). Before this release only those two checked the peer, so any other container on the Home Assistant network, and Home Assistant Core itself on the host network, could open the OpenDesign UI and API, the writable `/console/` terminal (no password) and the Omnigent settings API without signing in. The sidebar entry, the Supervisor watchdog and the built-in MCP server on port 8081 (Bearer token) are not affected. Port 8099 is not published; use Ingress.
+- `/opt/ha-opendesign` (the scripts nginx serves into the Home Assistant browser, and their helper tree) is now root-owned and not writable by the agents' UID 1001, so an agent or an Omnigent session can no longer rewrite them.
+- Documentation: what connecting an Omnigent server means for this add-on (see "Trust and network exposure" in DOCS).
+- Tests: the container smoke test now emulates Home Assistant's hassio network, requires a sibling container to be refused on every route, checks that UID 1001 cannot write the helper tree, and runs the core's native Omnigent runtime contract against this image.
+- No option, port, architecture, image name, core digest (still `20261029.0033` = `sha256:c8cd57f0…`) or data-layout change. Upgrading from 0.2.11 needs no migration.
+
 ## 0.2.11
 
 - Update the bundled Paseo runtime from 0.2.2 to the public 0.2.3 release. Provider home directories (`.codex`, `.claude`, `.pi/agent`) are created when the runtime context is built, so a service whose home volume lacks them no longer fails the Codex login or answers 503 for the Codex model list (this add-on's start script already created them). A model catalog that was cached empty (Pi before its login) or failed (a provider that could not start) is refreshed once and read again, so Pi models appear after login without restarting Paseo.

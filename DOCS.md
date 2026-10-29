@@ -12,6 +12,13 @@ Use **Open Web UI** or the **OpenDesign** sidebar item. **Open Web UI** enters t
 
 Projects, the OpenDesign database, application configuration, connector data, and generated state are stored beneath `/data/opendesign`. API BYOK credentials are deliberately excluded. The add-on requests cold backup so this directory is captured while the service is stopped.
 
+## Trust and network exposure
+
+- **Who can reach the add-on.** Port 8099 is the Ingress port and is not published. nginx admits only the Supervisor Ingress gateway (`172.30.32.2`) and processes inside the container; every other container on the Home Assistant network, and Home Assistant Core itself, is refused with HTTP 403 on every route. Home Assistant authenticates the person who opens the sidebar entry (the panel is admin-only). OpenDesign itself has no separate sign-in, so the Ingress gateway is the access control.
+- **The terminal is a shell.** The **CLI Terminal** plugin (`/console/`) is a writable login shell as the add-on's agent user (UID 1001) with that user's provider logins; anyone who may open the add-on panel may use it.
+- **Connecting an Omnigent server.** Connecting means the Omnigent server's users can start Claude Code, Codex, Pi or OpenCode sessions on this add-on: shell-equivalent access as UID 1001 to the OpenDesign data (projects, provider logins, Omnigent state). There is no directory allow-list on this side. Use a dedicated, non-admin Omnigent account for this add-on and connect only servers you control.
+- **Disconnect and backups.** **Disconnect** removes this add-on's local login; it does not revoke the login grant on the Omnigent server (grants live for the lifetime the server sets, up to a year on the WoowTech server). Revoke the login on the Omnigent server too, especially before discarding the add-on or a backup. Backups contain the Omnigent identity and login, so treat them as credentials.
+
 ## Built-in MCP server
 
 The add-on includes the Woow OpenDesign MCP server (it replaces the separate *Woow OpenDesign MCP Server* add-on). It always runs and always talks to this add-on's own OpenDesign; there is no connection to configure and no option to turn it off.

@@ -5,6 +5,12 @@ image=${1:-woow-ha-opendesign:test}
 container="woow-od-smoke-${RANDOM}"
 volume="woow-od-data-${RANDOM}"
 port=${SMOKE_PORT:-18099}
+# Emulates Home Assistant's hassio network. Supervisor Ingress reaches the add-on from 172.30.32.2; giving this bridge that gateway
+# address makes traffic from the host to the published port arrive at nginx with the same source, exactly like Ingress traffic in
+# production. A sibling container (172.30.32.20) models any other container on the hassio network.
+net="woow-od-smoke-net-${RANDOM}"
+addon_ip=172.30.32.10
+sibling_ip=172.30.32.20
 # Deliberately fake. The native BYOK smoke verifies this value never leaves the
 # transient browser-style request as a log line or persisted /data artifact.
 readonly BYOK_FAKE_KEY='od-byok-test-key-not-a-secret'
@@ -18,11 +24,13 @@ cleanup() {
   fi
   docker rm -f "$container" >/dev/null 2>&1 || true
   docker volume rm "$volume" >/dev/null 2>&1 || true
+  docker network rm "$net" >/dev/null 2>&1 || true
   rm -rf "$tmp"
 }
 trap cleanup EXIT
 
 docker volume create "$volume" >/dev/null
+docker network create --subnet 172.30.32.0/23 --gateway 172.30.32.2 "$net" >/dev/null
 
 # Deliberately fake, like Supervisor's: it must stay with the root launcher and
 # never reach a child process environment.
@@ -30,6 +38,7 @@ readonly SUPERVISOR_FAKE_TOKEN='supervisor-test-token-not-a-secret'
 
 start_container() {
   docker run -d --platform linux/amd64 --name "$container" \
+    --network "$net" --ip "$addon_ip" \
     -p "127.0.0.1:${port}:8099" \
     -e SUPERVISOR_TOKEN="$SUPERVISOR_FAKE_TOKEN" \
     -v "$volume:/data" \
@@ -37,10 +46,16 @@ start_container() {
 }
 
 wait_for_health() {
-  local attempt
+  local attempt code
   for ((attempt = 1; attempt <= 90; attempt += 1)); do
-    if curl -fsS "http://127.0.0.1:${port}/api/health" >"$tmp/health.json"; then
+    code=$(curl -sS -o "$tmp/health.json" -w '%{http_code}' "http://127.0.0.1:${port}/api/health" 2>/dev/null || true)
+    if [[ "$code" == 200 ]]; then
       return 0
+    fi
+    if [[ "$code" == 403 ]]; then
+      echo 'nginx refused the host request: published-port traffic must arrive from the emulated Supervisor gateway 172.30.32.2' >&2
+      docker network inspect "$net" >&2 || true
+      return 1
     fi
     if ! docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null | grep -qx true; then
       docker logs "$container" >&2 || true
@@ -69,6 +84,36 @@ import json
 import sys
 assert json.load(open(sys.argv[1], encoding='utf-8')).get('ok') is True
 PY
+
+# Any other container on the hassio network (and Home Assistant Core on the host network) is not the Supervisor Ingress gateway. Before 0.2.12
+# only /mcp-admin and Paseo checked the peer: the UI and API, the writable /console/ terminal and the Omnigent API answered 200 without credentials.
+sibling_status() {
+  docker run --rm --platform linux/amd64 --network "$net" --ip "$sibling_ip" --entrypoint curl "$image" \
+    -sS -o /dev/null -w '%{http_code}' --max-time 15 "$@"
+}
+for route in / /console/ /terminal/ /api/health /api/integrations/omnigent/status /ha-ingress.js /ha-export-bridge.js /_woow/support \
+  /mcp-admin/ /api/paseo-bridge /paseo/setup/; do
+  status=$(sibling_status "http://${addon_ip}:8099${route}")
+  if [[ "$status" != 403 ]]; then
+    echo "a sibling container on the hassio network got HTTP ${status}, expected 403, for ${route}" >&2
+    exit 1
+  fi
+done
+# Loopback (processes inside this container, the in-container tests below) stays admitted, but /mcp-admin keeps its own Ingress-peer-only rule.
+test "$(docker exec "$container" curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8099/api/health)" = 200
+test "$(docker exec "$container" curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8099/mcp-admin/)" = 403
+# UID 1001 runs the agents (and every Omnigent session). It must not be able to rewrite the scripts nginx serves into the browser of the Home
+# Assistant user, or the helper tree they load from.
+docker exec -u 1001:1001 "$container" sh -ceu '
+  test ! -w /opt/ha-opendesign
+  test ! -w /opt/ha-opendesign/ha-ingress.js
+  test ! -w /opt/ha-opendesign/ha-export-bridge.js
+  test ! -w /opt/ha-opendesign/node_modules
+'
+# The core ships its own build contract for the native Omnigent runtime (SDK pin, five patches, host-kit, private defaults). Verify it holds in
+# this image too, in a throwaway container without network or volumes so the image, not this container's data, is what is checked.
+docker run --rm --platform linux/amd64 --network none --user 1001:1001 --entrypoint /opt/omnigent/venv/bin/python "$image" \
+  -I -B /usr/local/share/woow/verify-omnigent-runtime.py
 
 # HA Supervisor removes the public ingress prefix before proxying and supplies
 # it in X-Ingress-Path. Nginx therefore receives '/' and must inject/rewrite the
@@ -131,7 +176,7 @@ test "$(docker port "$container" | wc -l)" = 1
 docker port "$container" | grep -Eq '^8099/tcp -> 127\.0\.0\.1:'
 # The built-in MCP server listens on 8081 for LAN clients (never host-mapped
 # unless the user maps it). Its Ingress administration only admits the
-# Supervisor peer: this host request (Docker gateway source) is refused.
+# Supervisor peer: a sibling container's request is refused (checked above).
 docker exec "$container" sh -ceu '
   for _ in $(seq 1 60); do
     netstat -ltn | grep -q "0.0.0.0:8081 " && break
@@ -142,8 +187,6 @@ docker exec "$container" sh -ceu '
   public=$(netstat -ltn | awk "/LISTEN/ { print \$4 }" | grep -v "^127\.0\.0\.1:" | sort)
   test "$public" = "$(printf "%s\n" 0.0.0.0:8081 0.0.0.0:8099 | sort)"
 '
-test "$(curl -sS -o /dev/null -w '%{http_code}' -H "X-Ingress-Path: $ingress_prefix" \
-  -H 'X-Remote-User-Id: 0123456789abcdef0123456789abcdef' "http://127.0.0.1:${port}/mcp-admin/")" = 403
 docker exec "$container" python3 -c '
 import json, urllib.error, urllib.request
 body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}).encode()
