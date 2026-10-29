@@ -50,7 +50,7 @@ start_container() {
 wait_for_health() {
   local attempt code
   for ((attempt = 1; attempt <= 90; attempt += 1)); do
-    code=$(curl -sS -o "$tmp/health.json" -w '%{http_code}' "http://127.0.0.1:${port}/api/health" 2>/dev/null || true)
+    code=$(curl -sS --max-time 10 -o "$tmp/health.json" -w '%{http_code}' "http://127.0.0.1:${port}/api/health" 2>/dev/null || true)
     if [[ "$code" == 200 ]]; then
       return 0
     fi
@@ -89,17 +89,47 @@ PY
 
 # Any other container on the hassio network (and Home Assistant Core on the host network) is not the Supervisor Ingress gateway. Before 0.2.12
 # only /mcp-admin and Paseo checked the peer: the UI and API, the writable /console/ terminal and the Omnigent API answered 200 without credentials.
-sibling_status() {
-  docker run --rm --platform linux/amd64 --network "$net" --ip "$sibling_ip" --entrypoint curl "$image" \
-    -sS -o /dev/null -w '%{http_code}' --max-time 15 "$@"
+#
+# The refusal must come from nginx itself. The MCP administration and the Paseo bridge also answer 403 on their own (no Ingress user header), and the
+# Paseo routes have an `X-Ingress-Path` guard, so a bare status check would stay green after the nginx rule was removed. nginx's stock error page is
+# the proof; routes that need Ingress-shaped headers are probed with them, from every source.
+nginx_page='<center>nginx</center>'
+ingress_headers=(-H 'X-Ingress-Path: /api/hassio_ingress/smokeprobe0123456789' -H 'X-Remote-User-Id: smoke-user'
+  -H 'X-OD-HA-Peer: 172.30.32.2' -H 'X-Forwarded-For: 172.30.32.2')
+acl_routes=(/mcp-admin/ /api/paseo-bridge /paseo/setup/)
+
+# probe PEER ROUTE [curl args...] sets probe_status and probe_body.
+#   host      the CI host through the published port: arrives from 172.30.32.2, i.e. the emulated Supervisor Ingress gateway
+#   sibling   another container on the emulated hassio network (172.30.32.20), also standing in for Home Assistant Core
+#   loopback  a process inside the add-on container
+probe() {
+  local peer=$1 route=$2 out
+  shift 2
+  case "$peer" in
+    host) out=$(curl -sS --max-time 15 -w '\n%{http_code}' "$@" "http://127.0.0.1:${port}${route}") ;;
+    sibling) out=$(docker run --rm --platform linux/amd64 --network "$net" --ip "$sibling_ip" --entrypoint curl "$image" \
+      -sS --max-time 15 -w '\n%{http_code}' "$@" "http://${addon_ip}:8099${route}") ;;
+    loopback) out=$(docker exec "$container" curl -sS --max-time 15 -w '\n%{http_code}' "$@" "http://127.0.0.1:8099${route}") ;;
+    *) echo "unknown probe peer ${peer}" >&2; exit 1 ;;
+  esac
+  probe_status=${out##*$'\n'}
+  probe_body=${out%$'\n'*}
 }
-for route in / /console/ /api/health /api/integrations/omnigent/status /ha-ingress.js /ha-export-bridge.js \
-  /mcp-admin/ /api/paseo-bridge /paseo/setup/; do
-  status=$(sibling_status "http://${addon_ip}:8099${route}")
-  if [[ "$status" != 403 ]]; then
-    echo "a sibling container on the hassio network got HTTP ${status}, expected 403, for ${route}" >&2
+is_nginx_refusal() {
+  [[ "$probe_status" == 403 && "$probe_body" == *"$nginx_page"* ]]
+}
+expect_nginx_refusal() {
+  if ! is_nginx_refusal; then
+    echo "${1} got HTTP ${probe_status} for ${2}, expected nginx's own 403 page" >&2
     exit 1
   fi
+}
+
+for route in / /console/ /api/health /api/integrations/omnigent/status /ha-ingress.js /ha-export-bridge.js "${acl_routes[@]}"; do
+  probe sibling "$route"
+  expect_nginx_refusal 'a sibling container on the hassio network' "$route"
+  probe sibling "$route" "${ingress_headers[@]}"
+  expect_nginx_refusal 'a sibling container sending Ingress-shaped headers' "$route"
 done
 # nginx runs `return` in its rewrite phase, before allow/deny is evaluated, so the redirect-only routes answer any peer. They return a bare redirect
 # to a relative or fixed target and expose nothing; tests/validate.py pins that every `return` in the server block is a redirect, never content.
@@ -118,16 +148,37 @@ sibling_redirect /terminal /console/
 sibling_redirect /terminal/ /console/
 sibling_redirect /mcp-admin /mcp-admin/
 sibling_redirect /_woow/support https://aiot.woowtech.io/woow
-# Loopback (processes inside this container, the in-container tests below) stays admitted, but /mcp-admin keeps its own Ingress-peer-only rule.
+# Positive control for the emulation itself: the routes with their own allow/deny admit only 172.30.32.2 (not loopback). If the published port ever
+# reached nginx from another address, the host would be refused here instead of the suite silently no longer behaving like Ingress.
+for route in "${acl_routes[@]}"; do
+  probe host "$route" "${ingress_headers[@]}"
+  if is_nginx_refusal; then
+    echo "nginx refused the emulated Supervisor Ingress gateway on ${route}: published-port traffic does not arrive from 172.30.32.2" >&2
+    exit 1
+  fi
+done
+# The scripts nginx serves from the now root-owned /opt/ha-opendesign must stay readable for nginx (UID 1002) and reachable for the gateway.
+for route in /ha-ingress.js /ha-export-bridge.js; do
+  probe host "$route"
+  if [[ "$probe_status" != 200 ]]; then
+    echo "the emulated Supervisor Ingress gateway got HTTP ${probe_status} for ${route}, expected 200" >&2
+    exit 1
+  fi
+done
+# Loopback (processes inside this container, the in-container tests below) stays admitted for ordinary routes, but /mcp-admin and Paseo keep their
+# own Ingress-peer-only rules: with the headers that get a request past the application, only nginx's rule can refuse the container itself.
 test "$(docker exec "$container" curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8099/api/health)" = 200
-test "$(docker exec "$container" curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8099/mcp-admin/)" = 403
+for route in "${acl_routes[@]}"; do
+  probe loopback "$route" "${ingress_headers[@]}"
+  expect_nginx_refusal 'a process inside the add-on container' "$route"
+done
 # UID 1001 runs the agents (and every Omnigent session). It must not be able to rewrite the scripts nginx serves into the browser of the Home
 # Assistant user, or the helper tree they load from.
 docker exec -u 1001:1001 "$container" sh -ceu '
-  test ! -w /opt/ha-opendesign
-  test ! -w /opt/ha-opendesign/ha-ingress.js
-  test ! -w /opt/ha-opendesign/ha-export-bridge.js
-  test ! -w /opt/ha-opendesign/node_modules
+  for path in /opt/ha-opendesign /opt/ha-opendesign/ha-ingress.js /opt/ha-opendesign/ha-export-bridge.js /opt/ha-opendesign/node_modules; do
+    test -e "$path" || { echo "missing $path" >&2; exit 1; }
+    if test -w "$path"; then echo "UID 1001 can write $path" >&2; exit 1; fi
+  done
 '
 # The core ships its own build contract for the native Omnigent runtime (SDK pin, five patches, host-kit, private defaults). Verify it holds in
 # this image too, in a throwaway container without network or volumes so the image, not this container's data, is what is checked.
