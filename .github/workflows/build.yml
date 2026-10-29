@@ -171,6 +171,9 @@ jobs:
       actions: read
     uses: WOOWTECH/Woow_HA_App_Store/.github/workflows/woow-addon-upgrade-check.yml@8f35e661dd2f08f13209465220340d7093f6192a # main 2026-10-29
     with:
+      # The Store input asks for the same ref as the uses line; without it the
+      # pinned workflow would run upgrade_check.py and registry.json from main.
+      tooling_ref: 8f35e661dd2f08f13209465220340d7093f6192a
       sbom_artifact: upgrade-comparison-sbom-*
 
   # A dispatch on a review branch builds and tests the candidate locally, then
