@@ -7,10 +7,11 @@ volume="woow-od-data-${RANDOM}"
 port=${SMOKE_PORT:-18099}
 # Emulates Home Assistant's hassio network. Supervisor Ingress reaches the add-on from 172.30.32.2; giving this bridge that gateway
 # address makes traffic from the host to the published port arrive at nginx with the same source, exactly like Ingress traffic in
-# production. A sibling container (172.30.32.20) models any other container on the hassio network.
+# production. Supervisor hands add-ons addresses from 172.30.33.0/24 of that network, so the add-on and the sibling container (any other container
+# on the hassio network) live there too: a relaxation such as `allow 172.30.33.0/24;` is then refused by the sibling check instead of passing it.
 net="woow-od-smoke-net-${RANDOM}"
-addon_ip=172.30.32.10
-sibling_ip=172.30.32.20
+addon_ip=172.30.33.10
+sibling_ip=172.30.33.20
 # Deliberately fake. The native BYOK smoke verifies this value never leaves the
 # transient browser-style request as a log line or persisted /data artifact.
 readonly BYOK_FAKE_KEY='od-byok-test-key-not-a-secret'
@@ -96,20 +97,22 @@ PY
 nginx_page='<center>nginx</center>'
 ingress_headers=(-H 'X-Ingress-Path: /api/hassio_ingress/smokeprobe0123456789' -H 'X-Remote-User-Id: smoke-user'
   -H 'X-OD-HA-Peer: 172.30.32.2' -H 'X-Forwarded-For: 172.30.32.2')
-acl_routes=(/mcp-admin/ /api/paseo-bridge /paseo/setup/)
+acl_routes=(/mcp-admin/ /api/paseo-bridge /paseo/setup /paseo/setup/ /paseo/assets/setup.js)
 
 # probe PEER ROUTE [curl args...] sets probe_status and probe_body.
 #   host      the CI host through the published port: arrives from 172.30.32.2, i.e. the emulated Supervisor Ingress gateway
-#   sibling   another container on the emulated hassio network (172.30.32.20), also standing in for Home Assistant Core
+#   sibling   another container on the emulated hassio network (172.30.33.20), also standing in for Home Assistant Core
 #   loopback  a process inside the add-on container
 probe() {
   local peer=$1 route=$2 out
   shift 2
+  # A curl failure (for example a timeout while Paseo or the MCP administration is still starting behind the route) becomes status 000: it is
+  # not a refusal by nginx, and the checks below decide what that means for the route.
   case "$peer" in
-    host) out=$(curl -sS --max-time 15 -w '\n%{http_code}' "$@" "http://127.0.0.1:${port}${route}") ;;
+    host) out=$(curl -sS --max-time 15 -w '\n%{http_code}' "$@" "http://127.0.0.1:${port}${route}") || out=$'\n000' ;;
     sibling) out=$(docker run --rm --platform linux/amd64 --network "$net" --ip "$sibling_ip" --entrypoint curl "$image" \
-      -sS --max-time 15 -w '\n%{http_code}' "$@" "http://${addon_ip}:8099${route}") ;;
-    loopback) out=$(docker exec "$container" curl -sS --max-time 15 -w '\n%{http_code}' "$@" "http://127.0.0.1:8099${route}") ;;
+      -sS --max-time 15 -w '\n%{http_code}' "$@" "http://${addon_ip}:8099${route}") || out=$'\n000' ;;
+    loopback) out=$(docker exec "$container" curl -sS --max-time 15 -w '\n%{http_code}' "$@" "http://127.0.0.1:8099${route}") || out=$'\n000' ;;
     *) echo "unknown probe peer ${peer}" >&2; exit 1 ;;
   esac
   probe_status=${out##*$'\n'}
@@ -120,12 +123,14 @@ is_nginx_refusal() {
 }
 expect_nginx_refusal() {
   if ! is_nginx_refusal; then
-    echo "${1} got HTTP ${probe_status} for ${2}, expected nginx's own 403 page" >&2
+    echo "${1} got HTTP ${probe_status} for ${2}, expected nginx's own 403 page; the body starts with:" >&2
+    printf '%s\n' "${probe_body:0:200}" >&2
     exit 1
   fi
 }
 
-for route in / /console/ /api/health /api/integrations/omnigent/status /ha-ingress.js /ha-export-bridge.js "${acl_routes[@]}"; do
+for route in / /console/ /api/health /api/integrations/omnigent/status /ha-ingress.js /ha-export-bridge.js \
+  /api/projects/smoke/export/pdf "${acl_routes[@]}"; do
   probe sibling "$route"
   expect_nginx_refusal 'a sibling container on the hassio network' "$route"
   probe sibling "$route" "${ingress_headers[@]}"
@@ -167,7 +172,7 @@ for route in /ha-ingress.js /ha-export-bridge.js; do
 done
 # Loopback (processes inside this container, the in-container tests below) stays admitted for ordinary routes, but /mcp-admin and Paseo keep their
 # own Ingress-peer-only rules: with the headers that get a request past the application, only nginx's rule can refuse the container itself.
-test "$(docker exec "$container" curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8099/api/health)" = 200
+test "$(docker exec "$container" curl -sS --max-time 15 -o /dev/null -w '%{http_code}' http://127.0.0.1:8099/api/health)" = 200
 for route in "${acl_routes[@]}"; do
   probe loopback "$route" "${ingress_headers[@]}"
   expect_nginx_refusal 'a process inside the add-on container' "$route"

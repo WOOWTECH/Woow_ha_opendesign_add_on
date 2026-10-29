@@ -82,12 +82,34 @@ check("proxy_pass http://unix:/run/ha-opendesign-mcp/admin.sock:/;" in nginx and
 # Server-level source restriction (0.2.12): the first directives of the 8099 server block admit only the Supervisor Ingress gateway and
 # loopback. Without them every other container on the hassio network (and HA Core on the host network) reached the UI/API, the writable
 # /console/ terminal and the Omnigent API with no credentials. Locations that declare their own allow/deny (/mcp-admin, Paseo) replace them.
-server_block = nginx.split("listen 8099 default_server;", 1)[1]
+server_block = nginx.partition("listen 8099 default_server;")[2]
+check(server_block != "", "nginx.conf must define the 8099 server block")
 server_head = [l.strip() for l in server_block.splitlines() if l.strip() and not l.strip().startswith("#")][:3]
 check(server_head == ["allow 172.30.32.2;", "allow 127.0.0.1;", "deny all;"],
       "the 8099 server block must start with allow 172.30.32.2; allow 127.0.0.1; deny all;")
-check(not re.search(r"\ballow\s+(all|127\.|0\.0\.0\.0)", server_block.split("location = /mcp-admin", 1)[1]),
-      "no location may re-admit loopback (or everyone) after the server-level rules")
+# Every allow/deny directive of the shipped nginx configuration, comments removed (a trailing `# ...` must not hide one). The server level admits the
+# Supervisor and loopback; /mcp-admin (two locations) and the Paseo include admit only the Supervisor. A further allow anywhere (a subnet for "another
+# add-on", `allow all`, a location that replaces the server-level rules without ending in `deny all`) reopens the exposure this release closes, so the
+# whole multiset is pinned rather than a few spellings.
+def nginx_code(text):
+    return "\n".join(line.split("#", 1)[0] for line in text.splitlines())
+
+def nginx_rules(text, directive):
+    return sorted(re.findall(rf"\b{directive}\s+([^;\s]+)\s*;", nginx_code(text)))
+
+nginx_dir = ROOT / "rootfs/etc/nginx"
+paseo_proxy = (nginx_dir / "paseo-proxy.conf").read_text()
+paseo_setup = (nginx_dir / "paseo-setup.conf").read_text()
+check(nginx_rules(nginx, "allow") == sorted(["172.30.32.2", "127.0.0.1", "172.30.32.2", "172.30.32.2"]),
+      "nginx.conf may allow only the Supervisor (server level and the two /mcp-admin locations) and loopback (server level)")
+check(nginx_rules(nginx, "deny") == ["all"] * 3 and nginx_rules(paseo_proxy, "allow") == ["172.30.32.2"] and nginx_rules(paseo_proxy, "deny") == ["all"]
+      and nginx_rules(paseo_setup, "allow") == [] and nginx_rules(paseo_setup, "deny") == [],
+      "every allow must be paired with `deny all`; paseo-proxy.conf admits only the Supervisor; paseo-setup.conf has no rules of its own")
+for directive in ("satisfy", "auth_request", "auth_basic", "error_page", "real_ip_header", "set_real_ip_from", "try_files"):
+    check(not re.search(rf"^\s*{directive}\b", nginx_code(nginx) + nginx_code(paseo_proxy) + nginx_code(paseo_setup), re.M),
+          f"nginx must not use `{directive}`: it can change which peers pass the source rules (review the access matrix before adding it)")
+check(not re.search(r"\blisten\b[^;]*proxy_protocol", nginx_code(nginx)), "nginx must not trust PROXY protocol addresses")
+check(config.get("panel_admin") is True, "panel_admin must stay true: it is what keeps non-administrators out of the Ingress panel")
 # `return` runs in nginx's rewrite phase, before allow/deny: in this server block it may only issue redirects (301/302) or refusals (403), never content.
 server_code = "\n".join(line.split("#", 1)[0] for line in server_block.splitlines())
 returns = re.findall(r"\breturn\s+(\d+)", server_code)
