@@ -63,6 +63,9 @@ jobs:
           skopeo --version
           jq --version
 
+      - name: Check anonymous JCR registry endpoint
+        run: python3 -B .github/scripts/registry-preflight.py
+
       - name: Log in to JCR (read-only) and GHCR
         env:
           JCR_RO_USERNAME: ${{ secrets.JCR_RO_USERNAME }}

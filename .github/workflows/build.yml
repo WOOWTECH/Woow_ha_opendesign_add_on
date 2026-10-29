@@ -18,7 +18,7 @@ permissions:
 env:
   # Shared WoowTech OpenDesign core image (PaaS open-design image), published as
   # the public ghcr.io/woowtech/open-design-core, pinned by digest (same as Dockerfile).
-  CORE_IMAGE: ghcr.io/woowtech/open-design-core:20261026.1751@sha256:14601a0b5c935b09193e7217daf603f2d3dbca2d9a9f3ba6f80d2fe2a406dbe2
+  CORE_IMAGE: ghcr.io/woowtech/open-design-core:20261029.0033@sha256:c8cd57f07adaef23b8dddbb22a8b75f97bdf8ca42c8bfbec1b284dc60ee5a4cf
 
 # A newer push may cancel a pull request run, never a main run: that one may be
 # publishing a release.
@@ -195,6 +195,9 @@ jobs:
         run: python3 .github/scripts/candidate-release.py plan
       - name: Set up Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Check anonymous JCR registry endpoint
+        if: startsWith(steps.candidate.outputs.core, 'jcr-prod.woowtech.io/')
+        run: python3 -B .github/scripts/registry-preflight.py
       - name: Log in to JCR for candidate core read
         if: startsWith(steps.candidate.outputs.core, 'jcr-prod.woowtech.io/')
         uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
