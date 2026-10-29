@@ -1,0 +1,4 @@
+# Python bytecode and Node dependency trees are build products, never source.
+__pycache__/
+*.py[cod]
+node_modules/
