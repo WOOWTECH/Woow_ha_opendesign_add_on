@@ -28,6 +28,8 @@ cleanup() {
   rm -rf "$tmp"
 }
 trap cleanup EXIT
+# A silent failing assertion (grep -q, test) used to leave only the container logs; name the line and command.
+trap 'echo "container-smoke.sh: line ${LINENO}: ${BASH_COMMAND} (exit status $?)" >&2' ERR
 
 docker volume create "$volume" >/dev/null
 docker network create --subnet 172.30.32.0/23 --gateway 172.30.32.2 "$net" >/dev/null
@@ -189,8 +191,15 @@ for old_path in /terminal /terminal/ /terminal/ws; do
   grep -Eq '^HTTP/1\.1 302' "$tmp/terminal-legacy.txt"
   grep -Fqx "Location: $ingress_prefix/console/"$'\r' "$tmp/terminal-legacy.txt"
 done
-test "$(docker port "$container" | wc -l)" = 1
-docker port "$container" | grep -Eq '^8099/tcp -> 127\.0\.0\.1:'
+# The image publishes exactly one container port, the Ingress port 8099, and only on loopback. On a user-defined network Docker may list the same
+# mapping once per address family (127.0.0.1 and ::1), so compare the set of published ports and the bind addresses, not the number of lines.
+ports=$(docker port "$container")
+if [[ "$(awk '{ print $1 }' <<<"$ports" | sort -u)" != 8099/tcp ]] \
+  || grep -Eqv -- '^8099/tcp -> (127\.0\.0\.1|\[::1\]):[0-9]+$' <<<"$ports"; then
+  echo 'unexpected published ports (only 8099/tcp on loopback is allowed):' >&2
+  echo "$ports" >&2
+  exit 1
+fi
 # The built-in MCP server listens on 8081 for LAN clients (never host-mapped
 # unless the user maps it). Its Ingress administration only admits the
 # Supervisor peer: a sibling container's request is refused (checked above).
