@@ -101,7 +101,7 @@ class ReviewedPin(unittest.TestCase):
     def test_installed_layout_import_checks_reviewed_vendor_and_hooks(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            shutil.copytree(VENDOR, root, dirs_exist_ok=True,
+            shutil.copytree(VENDOR / 'packages/mcp-admin-core', root / 'packages/mcp-admin-core',
                             ignore=shutil.ignore_patterns('__pycache__'))
             shutil.copytree(CODE / 'ha_opendesign_mcp', root / 'ha_opendesign_mcp',
                             ignore=shutil.ignore_patterns('__pycache__'))
