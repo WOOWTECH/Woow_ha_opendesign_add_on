@@ -10,7 +10,8 @@ Checked as WOOWTECH/Woow_ha_mcp_addons 0.4.0 checks its SDK 2 children (tests/te
   gateway no longer forwards that header with an initialize: the handshake works through the gateway at every reviewed
   revision, also for a client that keeps its server/discover header; a 2026-07-28 request inside a session fails, as
   such a header did with SDK 1.x;
-- through the gateway: the 15 tools as 0.2.5 listed them (fixtures/surface-0.2.5.json), a successful call, and a
+- through the gateway: the 15 tools as 0.2.5 listed them except for the six reviewed OpenDesign input schemas,
+  a successful call, and a
   failure with its 0.2.5 text ('Error executing tool <name>: <code>');
 - the request body ceiling: the gateway reads a body up to 16 MiB (gateway.MAX_REQUEST, 256 KiB until 0.2.5) and
   answers a larger one 413.
@@ -28,6 +29,7 @@ import tempfile
 import threading
 import time
 import unittest
+from urllib.parse import unquote
 
 HERE = Path(__file__).resolve().parent
 CODE = Path(os.environ.get('HA_OD_MCP_CODE', str(HERE.parents[1])))
@@ -36,16 +38,20 @@ sys.path[:0] = [str(VENDOR / 'packages/mcp-admin-core'), str(CODE)]
 CHILD_PYTHON = os.environ.get('HA_OD_MCP_CHILD_PYTHON')
 
 import httpx  # noqa: E402
-from mcp_admin_core import VERSION, gateway  # noqa: E402
+from mcp_admin_core import VERSION, gateway, policy  # noqa: E402
 from mcp_admin_core.configuration import ConfigurationState  # noqa: E402
 from mcp_admin_core.products import TOOLS  # noqa: E402
 
-from ha_opendesign_mcp import defaults, runtime  # noqa: E402
+from ha_opendesign_mcp import defaults, runtime, surface  # noqa: E402
 from ha_opendesign_mcp.state import BuiltinStore  # noqa: E402
 
 LISTED = json.loads((HERE / 'fixtures' / 'surface-0.2.5.json').read_text())['gateway']['listed']['granted']
+CHANGED_SCHEMAS = frozenset({'get_project', 'delete_project', 'list_project_files',
+                             'get_file_info', 'read_file', 'send_message'})
 logging.getLogger('asyncio').setLevel(logging.ERROR)  # the test loop's debug mode calls the 16 MiB body's parsing slow
 MISSING = '00000000-0000-4000-8000-000000000000'
+UPPER_PROJECT = '76C45D7A-3147-45CF-A3F4-295EE256E48E'
+UNICODE_FILE = '資料/說明.txt'
 MODERN = '2026-07-28'
 ACCEPT = {'Accept': 'application/json, text/event-stream'}
 DISCOVER = {'jsonrpc': '2.0', 'id': 0, 'method': 'server/discover', 'params': {'_meta': {
@@ -63,11 +69,17 @@ class Daemon(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        if self.path == '/api/health':
+        path = unquote(self.path)
+        if path == '/api/health':
             status, body = 200, {'ok': True, 'version': '0.24.1'}
+        elif path == '/api/projects/' + UPPER_PROJECT + '/files':
+            status, body = 200, {'files': [{'name': UNICODE_FILE, 'path': UNICODE_FILE,
+                                            'type': 'file', 'size': len('中文檔案\n'.encode())}]}
+        elif path == '/api/projects/' + UPPER_PROJECT + '/files/' + UNICODE_FILE:
+            status, body = 200, '中文檔案\n'.encode()
         else:
             status, body = 404, {'error': {'code': 'PROJECT_NOT_FOUND', 'message': 'ENOENT /data/opendesign/x'}}
-        data = json.dumps(body).encode()
+        data = body if isinstance(body, bytes) else json.dumps(body).encode()
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(data)))
@@ -206,7 +218,15 @@ class GatewayAndChild(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(result['protocolVersion'], version)
                     self.assertEqual(result['serverInfo'], {'name': 'woow-mcp-opendesign', 'version': VERSION})
                     listed = (await self.rpc(headers, {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list'}))['result']
-                    self.assertEqual(listed, LISTED)  # the 15 tools exactly as 0.2.5 listed them
+                    old = {tool['name']: tool for tool in LISTED['tools']}
+                    self.assertEqual({tool['name'] for tool in listed['tools']}, set(old))
+                    for tool in listed['tools']:
+                        name = tool['name']
+                        if name in CHANGED_SCHEMAS:
+                            self.assertEqual(tool['inputSchema'], policy.declared_schema(surface.TABLE[name].arguments))
+                            self.assertEqual({**tool, 'inputSchema': old[name]['inputSchema']}, old[name])
+                        else:
+                            self.assertEqual(tool, old[name])
                     called = (await self.rpc(headers, {'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call', 'params': {
                         'name': 'health', 'arguments': {}}}))['result']
                     self.assertIsNot(called.get('isError'), True, called)
@@ -216,6 +236,11 @@ class GatewayAndChild(unittest.IsolatedAsyncioTestCase):
                     self.assertTrue(failed['isError'])
                     self.assertEqual([item['text'] for item in failed['content']],
                                      ['Error executing tool get_project: BACKEND_HTTP_ERROR status=404'])
+                    unicode_call = (await self.rpc(headers, {'jsonrpc': '2.0', 'id': 5, 'method': 'tools/call', 'params': {
+                        'name': 'read_file', 'arguments': {'project_id': UPPER_PROJECT,
+                                                          'file_path': UNICODE_FILE}}}))['result']
+                    self.assertIsNot(unicode_call.get('isError'), True, unicode_call)
+                    self.assertEqual(unicode_call['content'][0]['text'], '中文檔案\n')
                     ended = await self.client.delete('/mcp', headers=headers)
                     self.assertIn(ended.status_code, (200, 204))
 
