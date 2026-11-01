@@ -82,6 +82,23 @@ class ReviewedPin(unittest.TestCase):
                 contract.install()
         self.assertIs(gateway.filter_list, contract.filter_list)
 
+    def test_duplicate_child_name_cannot_make_catalog_or_listing_false_green(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = BuiltinStore(Path(directory))
+            try:
+                defaults.apply(store)
+                state = store.load()
+                for second in (copy.deepcopy(RAW), {**RAW, 'outputSchema': {'type': 'object'}}):
+                    for pair in ([copy.deepcopy(RAW), second], [second, copy.deepcopy(RAW)]):
+                        with self.subTest(pair=pair):
+                            reply = gateway.filter_list({'result': {'tools': pair}}, TOOLS['opendesign'], state)
+                            self.assertTrue(all('outputSchema' not in tool for tool in reply['result']['tools']))
+                            catalog = gateway.tool_catalog(TOOLS['opendesign'], [copy.deepcopy(RAW)], pair, state)
+                            item = next(x for x in catalog['items'] if x['name'] == 'read_file')
+                            self.assertNotIn('outputSchema', item)
+            finally:
+                store.close()
+
     def test_observed_management_catalog_keeps_policy_and_never_uses_fallback_guess(self):
         with tempfile.TemporaryDirectory() as directory:
             store = BuiltinStore(Path(directory))

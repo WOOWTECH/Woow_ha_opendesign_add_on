@@ -60,12 +60,11 @@ def _reviewed(candidate):
     return copy.deepcopy(READ_FILE_OUTPUT) if type(candidate) is dict and candidate == READ_FILE_OUTPUT else None
 
 
-def _first_read_file(tools):
-    if type(tools) is list:
-        for tool in tools:
-            if type(tool) is dict and tool.get('name') == 'read_file':
-                return tool.get('outputSchema')
-    return None
+def _unique_read_file(tools):
+    if type(tools) is not list:
+        return None
+    matches = [tool for tool in tools if type(tool) is dict and tool.get('name') == 'read_file']
+    return matches[0].get('outputSchema') if len(matches) == 1 else None
 
 
 def _local(state, tools):
@@ -77,15 +76,15 @@ def filter_list(message, tools, state):
     """Only add the pin to a read_file the original policy kept in tools/list."""
     candidate = None
     if _local(state, tools) and type(message) is dict and type(message.get('result')) is dict:
-        candidate = _reviewed(_first_read_file(message['result'].get('tools')))
+        candidate = _reviewed(_unique_read_file(message['result'].get('tools')))
     filtered = ORIGINAL_FILTER(message, tools, state)
     if candidate is not None and type(filtered.get('result')) is dict:
-        for tool in filtered['result'].get('tools', ()):
-            if type(tool) is dict and tool.get('name') == 'read_file':
-                if 'outputSchema' in tool:
-                    raise RuntimeError('unexpected vendored output schema')
-                tool['outputSchema'] = candidate
-                break
+        matches = [tool for tool in filtered['result'].get('tools', ())
+                   if type(tool) is dict and tool.get('name') == 'read_file']
+        if len(matches) == 1:
+            if 'outputSchema' in matches[0]:
+                raise RuntimeError('unexpected vendored output schema')
+            matches[0]['outputSchema'] = candidate
     return filtered
 
 
@@ -94,7 +93,7 @@ def tool_catalog(registry, pinned, observed, state):
     catalog = ORIGINAL_CATALOG(registry, pinned, observed, state)
     if not _local(state, registry):
         return catalog
-    candidate = _reviewed(_first_read_file(observed))
+    candidate = _reviewed(_unique_read_file(observed))
     if candidate is None:
         return catalog
     matches = [item for item in catalog['items'] if item['name'] == 'read_file']
