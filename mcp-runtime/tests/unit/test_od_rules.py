@@ -75,6 +75,19 @@ class SecretNames(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertIsNotNone(od_rules.file_path_problem(path))
 
+    def test_imported_project_id_grammar_keeps_run_ids_uuid_only(self):
+        for project_id in (PROJECT, PROJECT.upper(), 'imported-project_1', '..safe', 'a' * 128, '.' * 127 + 'a'):
+            with self.subTest(project_id=project_id):
+                self.assertTrue(od_rules.safe_project_id(project_id))
+        for project_id in ('', '.', '..', '.' * 128, '../secret', 'a/b', 'a\\b',
+                           'a%2fb', '.env/secret', '資料', 'a' * 129, None, 123):
+            with self.subTest(project_id=project_id):
+                self.assertFalse(od_rules.safe_project_id(project_id))
+        stream = od_rules.ChatStream()
+        stream.feed(b'event: start\ndata: {"projectId":"imported-project_1","runId":"imported-project_1"}\n\n')
+        self.assertEqual(stream.project_id, 'imported-project_1')
+        self.assertIsNone(stream.run_id)
+
 
 class ReadFileRules(unittest.TestCase):
     LISTING = {'files': [

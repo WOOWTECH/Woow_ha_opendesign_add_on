@@ -21,6 +21,16 @@ import time
 # imported project ids can be case-sensitive in the daemon's database.
 UUID_PATTERN = r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
 UUID = re.compile(UUID_PATTERN)
+# OpenDesign imports can keep a non-UUID project id. Match the PaaS child policy:
+# one safe URL path component, 1..128 ASCII characters, containing a non-dot.
+# The pattern is shared by Pydantic/JSON Schema and Python's child guard; it
+# uses no lookahead (unsupported by pydantic-core's regex engine).
+PROJECT_ID_PATTERN = r'^\.*[A-Za-z0-9_-][A-Za-z0-9._-]*$'
+PROJECT_ID = re.compile(PROJECT_ID_PATTERN)
+
+
+def safe_project_id(value):
+    return isinstance(value, str) and len(value) <= 128 and PROJECT_ID.fullmatch(value) is not None
 # Keep the former ASCII characters and add CJK Unified Ideographs (including
 # Extension A), which the pinned OpenDesign daemon keeps in filenames. This
 # deliberately excludes controls, bidi markers, backslashes and percent escapes.
@@ -274,7 +284,7 @@ class ChatStream:
         if event == 'start':
             if isinstance(payload.get('runId'), str) and UUID.fullmatch(payload['runId']):
                 self.run_id = payload['runId']
-            if isinstance(payload.get('projectId'), str) and UUID.fullmatch(payload['projectId']):
+            if safe_project_id(payload.get('projectId')):
                 self.project_id = payload['projectId']
         elif event == 'agent':
             if payload.get('type') == 'text_delta' and isinstance(payload.get('delta'), str):

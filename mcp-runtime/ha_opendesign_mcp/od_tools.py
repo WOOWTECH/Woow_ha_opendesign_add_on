@@ -19,10 +19,13 @@ names and parameters (the PaaS server's):
                                              runs unprojected and no longer has output_policy.py)
 
 Every failure is a fixed public code (vendored backend_policy.backend_errors / public_backend_error, or one of
-REFUSALS): never a daemon message, path, URL or token. At most CHAT_SLOTS agent runs are followed at a time. With SDK 2
+REFUSALS): never a daemon message, path, URL or token. The four retained project handlers get the same safe-ID guard
+before daemon I/O. At most CHAT_SLOTS agent runs are followed at a time. With SDK 2
 the client reads that text only through the vendored tool_error_text.keep_error_text(), which child.setup() applies
 last ('Error executing tool <name>: <code>', as with SDK 1.x).
 """
+import functools
+import inspect
 import threading
 import uuid
 
@@ -36,6 +39,7 @@ _chats = threading.BoundedSemaphore(CHAT_SLOTS)
 REFUSALS = ('FILE_PATH_REFUSED', 'FILE_NOT_FOUND', 'FILE_TOO_LARGE', 'FILE_NOT_TEXT', 'PROJECT_NOT_FOUND',
             'INVALID_ARGUMENTS', 'BACKEND_BUSY')
 REPLACED = ('list_connectors', 'read_file', 'create_project', 'send_message', 'list_runs')
+PROJECT_GUARDED = ('get_project', 'delete_project', 'list_project_files', 'get_file_info')
 
 
 class Refused(BackendFailure):
@@ -65,7 +69,7 @@ class Server:
 
 
 def _project_id(value):
-    if not isinstance(value, str) or not od_rules.UUID.fullmatch(value):
+    if not od_rules.safe_project_id(value):
         raise Refused('INVALID_ARGUMENTS')
     return value
 
@@ -95,7 +99,7 @@ def make_handlers(server):
         credentials, .env...) are refused, and so are binary files.
 
         Args:
-            project_id: UUID of the project
+            project_id: Safe project ID (UUID or imported ID)
             file_path: Relative path of the file within the project (e.g. 'index.html')
         """
         _project_id(project_id)
@@ -152,7 +156,7 @@ def make_handlers(server):
         same fields as create_project.
 
         Args:
-            project_id: UUID of the project to continue
+            project_id: Safe project ID (UUID or imported ID) to continue
             prompt: The message to send to the AI agent
             agent_id: Agent id from list_agents. Default: 'claude'
         """
@@ -214,6 +218,29 @@ def install(mcp, od):
     from mcp.server.mcpserver.tools.base import Tool  # MCP Python SDK 2 (0.2.6); mcp.server.fastmcp in SDK 1.x
     tools = mcp._tool_manager._tools
     handlers = make_handlers(Server(od))
+    # The four retained vendored handlers previously relied on the gateway's
+    # UUID model. Guard them in the child too, before any daemon request, so
+    # widening the gateway never gives a direct child caller a path-shaped id.
+    for name in PROJECT_GUARDED:
+        tool = tools.get(name)
+        if tool is None or tool.is_async or tool.fn.__module__ != 'opendesign_mcp_server.od_mcp_server':
+            raise RuntimeError('unexpected vendored tool ' + name)
+        signature = inspect.signature(tool.fn)
+        expected = ('project_id', 'file_path') if name == 'get_file_info' else ('project_id',)
+        if tuple(signature.parameters) != expected:
+            raise RuntimeError('unexpected vendored tool arguments ' + name)
+        if tool.description.count('UUID of the project') != 1:
+            raise RuntimeError('unexpected vendored tool description ' + name)
+        tool.description = tool.description.replace('UUID of the project',
+                                                    'Safe project ID (UUID or imported ID)')
+        original = tool.fn
+
+        @functools.wraps(original)
+        def guarded(*args, __fn=original, __signature=signature, **kwargs):
+            _project_id(__signature.bind(*args, **kwargs).arguments['project_id'])
+            return __fn(*args, **kwargs)
+
+        tool.fn = guarded  # preserve pinned parameters and output schema
     for name in REPLACED:
         if name not in tools or tools[name].is_async:
             raise RuntimeError('unexpected vendored tool ' + name)
