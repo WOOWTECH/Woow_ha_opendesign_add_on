@@ -127,6 +127,19 @@ class Arguments(unittest.TestCase):
         self.refused('read_file', {'project_id': PROJECT, 'file_path': 'a.html', 'extra': MARKER})
         self.refused('read_file', {'project_id': MARKER + '/secret', 'file_path': 'a.html'})
 
+    def test_get_file_info_metadata_path_stays_relative_without_read_secret_policy(self):
+        for path in ('資料/說明.txt', '.env', 'config/.env.production'):
+            with self.subTest(path=path):
+                self.assertEqual(self.allowed('get_file_info', {'project_id': PROJECT, 'file_path': path})['file_path'],
+                                 path)
+        for path in ('../secret', 'a//b', 'a/./b', '/absolute', 'a%2e%2e/b'):
+            with self.subTest(path=path):
+                refusal = self.refused('get_file_info', {'project_id': PROJECT, 'file_path': path})
+                self.assertEqual(refusal.kind, 'invalid_params')
+                self.assertEqual(refusal.errors[0]['field'], 'file_path')
+        self.assertEqual(self.refused('read_file', {'project_id': PROJECT, 'file_path': '.env'}).kind,
+                         'invalid_params')
+
     def test_unicode_filename_and_uppercase_uuid_are_bounded_inputs(self):
         upper = PROJECT.upper()
         self.assertEqual(self.allowed('get_project', {'project_id': upper}), {'project_id': upper})
