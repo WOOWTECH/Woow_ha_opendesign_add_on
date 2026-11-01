@@ -26,7 +26,19 @@ if hashlib.sha256(json.dumps(READ_FILE_OUTPUT, sort_keys=True,
     separators=(',', ':'), ensure_ascii=False).encode()).hexdigest() != SCHEMA_SHA256:
     raise RuntimeError('OpenDesign output contract pin changed')
 
-VENDOR = Path(__file__).resolve().parents[1] / 'vendor/packages/mcp-admin-core/mcp_admin_core'
+def _vendor_dir(root):
+    # Repository tests import from mcp-runtime/vendor; install.sh copies that
+    # vendor tree to /opt/woow/packages and removes the staging directory.
+    candidates = [root / suffix for suffix in (
+        'vendor/packages/mcp-admin-core/mcp_admin_core',
+        'packages/mcp-admin-core/mcp_admin_core')]
+    present = [path for path in candidates if path.is_dir()]
+    if len(present) != 1:
+        raise RuntimeError('OpenDesign output contract requires one known vendor layout')
+    return present[0]
+
+
+VENDOR = _vendor_dir(Path(__file__).resolve().parents[1])
 VENDOR_SHA256 = {
     'policy.py': '229bf7cee338c2cd79f1209c510dd84a506e2541ebe03360323411530bbce7cc',
     'gateway.py': '06b5b2a09251f54efbf49d96fa644347da965e7a008663814071b370074e2036',

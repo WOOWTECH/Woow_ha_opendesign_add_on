@@ -3,6 +3,8 @@ import copy
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -74,6 +76,20 @@ class ReviewedPin(unittest.TestCase):
                 store.close()
 
     def test_source_hash_signature_and_binding_fail_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'vendor/packages/mcp-admin-core/mcp_admin_core'
+            installed = root / 'packages/mcp-admin-core/mcp_admin_core'
+            with self.assertRaisesRegex(RuntimeError, 'one known vendor layout'):
+                contract._vendor_dir(root)
+            source.mkdir(parents=True)
+            self.assertEqual(contract._vendor_dir(root), source)
+            source.rmdir()
+            installed.mkdir(parents=True)
+            self.assertEqual(contract._vendor_dir(root), installed)
+            source.mkdir(parents=True)
+            with self.assertRaisesRegex(RuntimeError, 'one known vendor layout'):
+                contract._vendor_dir(root)
         with mock.patch.dict(contract.VENDOR_SHA256, {'policy.py': '0' * 64}):
             with self.assertRaisesRegex(RuntimeError, 'reviewed vendor'):
                 contract.guard_vendor()
@@ -81,6 +97,25 @@ class ReviewedPin(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'hook already changed'):
                 contract.install()
         self.assertIs(gateway.filter_list, contract.filter_list)
+
+    def test_installed_layout_import_checks_reviewed_vendor_and_hooks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copytree(VENDOR, root, dirs_exist_ok=True,
+                            ignore=shutil.ignore_patterns('__pycache__'))
+            shutil.copytree(CODE / 'ha_opendesign_mcp', root / 'ha_opendesign_mcp',
+                            ignore=shutil.ignore_patterns('__pycache__'))
+            env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'HOME': str(root),
+                   'PYTHONDONTWRITEBYTECODE': '1',
+                   'PYTHONPATH': str(root / 'packages/mcp-admin-core') + ':' + str(root)}
+            command = ('from ha_opendesign_mcp import output_contract, runtime; '
+                       'from mcp_admin_core import gateway; '
+                       'output_contract.guard_vendor(); '
+                       'assert gateway.filter_list is output_contract.filter_list; '
+                       'assert gateway.tool_catalog is output_contract.tool_catalog')
+            result = subprocess.run([sys.executable, '-B', '-c', command], cwd=root, env=env,
+                                    capture_output=True, text=True, timeout=20, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr[-1000:])
 
     def test_duplicate_child_name_cannot_make_catalog_or_listing_false_green(self):
         with tempfile.TemporaryDirectory() as directory:
