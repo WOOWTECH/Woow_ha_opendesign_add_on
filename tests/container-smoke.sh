@@ -323,9 +323,9 @@ assert body["tools"]["catalog_count"] == 15, body["tools"]["catalog_count"]
 # real OpenDesign daemon: server/discover (sent first by Claude.ai and the SDK 2
 # client) gets the gateway's own JSON-RPC -32601; the 2025 handshake works, also
 # with a 2026-07-28 MCP-Protocol-Version header (no longer forwarded with an
-# initialize: an SDK 2 child refuses it); the 15 tools keep the 0.2.5 listing
-# except for the six reviewed UUID/path input schemas; a call works and a
-# failure keeps its 0.2.5 text. The add-on
+# initialize: an SDK 2 child refuses it); the 15 tools keep their 0.2.5 catalog
+# except the six reviewed UUID/path input schemas and read_file outputSchema;
+# calls work and a failure keeps its 0.2.5 text. The add-on
 # token is read inside the container and never printed.
 docker exec -i "$container" /opt/woow/.venv/bin/python -c '
 import json
@@ -334,7 +334,7 @@ import time
 import httpx
 sys.path[:0] = ["/opt/woow/packages/mcp-admin-core", "/opt/woow"]
 from mcp_admin_core.policy import declared_schema
-from ha_opendesign_mcp import surface
+from ha_opendesign_mcp import output_contract, surface
 listed = json.load(sys.stdin)["gateway"]["listed"]["granted"]
 changed_schemas = {"get_project", "delete_project", "list_project_files",
                    "get_file_info", "read_file", "send_message"}
@@ -375,6 +375,9 @@ with httpx.Client(base_url="http://127.0.0.1:8081", timeout=60, trust_env=False)
     assert [tool["name"] for tool in current_tools] == [tool["name"] for tool in old_tools]
     assert len(current_tools) == 15
     for current, old in zip(current_tools, old_tools):
+        current = dict(current)
+        if current["name"] == "read_file":
+            assert current.pop("outputSchema") == output_contract.READ_FILE_OUTPUT
         if current["name"] in changed_schemas:
             assert current["inputSchema"] == declared_schema(surface.TABLE[current["name"]].arguments), current["name"]
             current = {**current, "inputSchema": old["inputSchema"]}
@@ -390,7 +393,7 @@ with httpx.Client(base_url="http://127.0.0.1:8081", timeout=60, trust_env=False)
     assert [item["text"] for item in missing["content"]] == [
         "Error executing tool get_project: BACKEND_HTTP_ERROR status=404"], missing
     assert client.delete("/mcp", headers=headers).status_code in (200, 204)
-print("built-in MCP on SDK 2: server/discover -32601, 2025 handshake, 15 tools with reviewed schemas, call and failure text")
+print("built-in MCP on SDK 2: server/discover -32601, 2025 handshake, 15 tools with reviewed input/output schemas, call and failure text")
 ' < mcp-runtime/tests/unit/fixtures/surface-0.2.5.json
 
 docker exec "$container" sh -ceu '
