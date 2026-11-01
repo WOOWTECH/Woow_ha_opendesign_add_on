@@ -309,6 +309,34 @@ class GatewayAndChild(unittest.IsolatedAsyncioTestCase):
                                   ('GET', '/api/projects/' + IMPORTED + '/files/' + quote(UNICODE_FILE))])
         await self.client.delete('/mcp', headers=headers)
 
+    async def test_get_file_info_metadata_paths_and_gateway_rejections(self):
+        headers = dict(self.auth)
+        await self.handshake('2025-11-25', headers)
+        for path in (UNICODE_FILE, '.env'):
+            with self.subTest(path=path):
+                result = (await self.rpc(headers, {'jsonrpc': '2.0', 'id': 30, 'method': 'tools/call', 'params': {
+                    'name': 'get_file_info', 'arguments': {'project_id': IMPORTED, 'file_path': path}}}))['result']
+                self.assertIsNot(result.get('isError'), True, result)
+                metadata = json.loads(result['content'][0]['text'])
+                if path == UNICODE_FILE:
+                    self.assertEqual(metadata['path'], path)
+                else:
+                    self.assertIn('error', metadata)
+        expected = [('GET', '/api/projects/' + IMPORTED + '/files')] * 2
+        self.assertEqual(Daemon.requests, expected)
+        for path in ('../secret', 'a//b', 'a/./b', '/absolute', 'a%2e%2e/b'):
+            with self.subTest(path=path):
+                refused = await self.rpc(headers, {'jsonrpc': '2.0', 'id': 31, 'method': 'tools/call', 'params': {
+                    'name': 'get_file_info', 'arguments': {'project_id': IMPORTED, 'file_path': path}}})
+                self.assertEqual(refused['error']['code'], -32602)
+                self.assertEqual(refused['error']['data']['errors'][0]['field'], 'file_path')
+                self.assertEqual(Daemon.requests, expected)
+        read_secret = await self.rpc(headers, {'jsonrpc': '2.0', 'id': 32, 'method': 'tools/call', 'params': {
+            'name': 'read_file', 'arguments': {'project_id': IMPORTED, 'file_path': '.env'}}})
+        self.assertEqual(read_secret['error']['code'], -32602)
+        self.assertEqual(Daemon.requests, expected)
+        await self.client.delete('/mcp', headers=headers)
+
     async def test_the_request_body_ceiling(self):
         self.assertEqual(gateway.MAX_REQUEST, 16 * 1024 * 1024)
         headers = dict(self.auth)

@@ -201,6 +201,22 @@ class Tools(unittest.TestCase):
                     self.assertTrue(text.endswith(': INVALID_ARGUMENTS'), text)
         self.assertEqual(Daemon.requests, [])
 
+    def test_get_file_info_child_rejects_unsafe_paths_before_file_list_get(self):
+        for path in ('../secret', 'a//b', 'a/./b', '/absolute', 'a%2e%2e/b'):
+            with self.subTest(path=path):
+                error, text = call('get_file_info', {'project_id': PROJECT, 'file_path': path})
+                self.assertTrue(error, text)
+                self.assertTrue(text.endswith(': INVALID_ARGUMENTS'), text)
+                self.assertEqual(Daemon.requests, [])
+        unicode_path = '資料/說明.txt'
+        error, text = call('get_file_info', {'project_id': PROJECT, 'file_path': unicode_path})
+        self.assertFalse(error, text)
+        self.assertEqual(json.loads(text)['path'], unicode_path)
+        error, text = call('get_file_info', {'project_id': PROJECT, 'file_path': '.env'})
+        self.assertFalse(error, text)
+        self.assertIn("File '.env' not found", text)
+        self.assertEqual(Daemon.requests, [('GET', '/api/projects/%s/files' % PROJECT)] * 2)
+
     def test_list_connectors(self):
         error, text = call('list_connectors', {})
         self.assertFalse(error)

@@ -20,7 +20,8 @@ names and parameters (the PaaS server's):
 
 Every failure is a fixed public code (vendored backend_policy.backend_errors / public_backend_error, or one of
 REFUSALS): never a daemon message, path, URL or token. The four retained project handlers get the same safe-ID guard
-before daemon I/O. At most CHAT_SLOTS agent runs are followed at a time. With SDK 2
+before daemon I/O; get_file_info also checks its relative path before the file-list GET. At most CHAT_SLOTS agent runs
+are followed at a time. With SDK 2
 the client reads that text only through the vendored tool_error_text.keep_error_text(), which child.setup() applies
 last ('Error executing tool <name>: <code>', as with SDK 1.x).
 """
@@ -221,6 +222,7 @@ def install(mcp, od):
     # The four retained vendored handlers previously relied on the gateway's
     # UUID model. Guard them in the child too, before any daemon request, so
     # widening the gateway never gives a direct child caller a path-shaped id.
+    # The vendored get_file_info handler needs its own relative file_path check.
     for name in PROJECT_GUARDED:
         tool = tools.get(name)
         if tool is None or tool.is_async or tool.fn.__module__ != 'opendesign_mcp_server.od_mcp_server':
@@ -236,8 +238,12 @@ def install(mcp, od):
         original = tool.fn
 
         @functools.wraps(original)
-        def guarded(*args, __fn=original, __signature=signature, **kwargs):
-            _project_id(__signature.bind(*args, **kwargs).arguments['project_id'])
+        def guarded(*args, __fn=original, __name=name, __signature=signature, **kwargs):
+            arguments = __signature.bind(*args, **kwargs).arguments
+            _project_id(arguments['project_id'])
+            if (__name == 'get_file_info'
+                    and od_rules.file_path_problem(arguments['file_path'], for_read=False) is not None):
+                raise Refused('INVALID_ARGUMENTS')
             return __fn(*args, **kwargs)
 
         tool.fn = guarded  # preserve pinned parameters and output schema
