@@ -99,6 +99,17 @@ jobs:
         id: metadata
         shell: bash
         run: echo "version=$(awk -F'\"' '/^version:/ { print $2 }' config.yaml)" >> "$GITHUB_OUTPUT"
+      # The PR holds three copies of the amd64 image at once: the loaded
+      # image, Syft's docker save for the SBOM and the addon-image docker save
+      # for the upgrade test. The runner's free space ran out (#143), so remove
+      # preinstalled toolchains this job never uses, as hermes's candidate job
+      # does; df shows the space before and after.
+      - name: Free disk space
+        if: github.event_name == 'pull_request'
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
       - name: Set up QEMU
         uses: docker/setup-qemu-action@53851d14592bedcffcf25ea515637cff71ef929a # v3.3.0
       - name: Set up Buildx
@@ -128,7 +139,17 @@ jobs:
       # uploaded as artifact upgrade-comparison-sbom-woow_ha_opendesign.
       - name: SBOM for the upgrade comparison
         if: github.event_name == 'pull_request' && matrix.arch == 'amd64'
-        uses: WOOWTECH/Woow_HA_App_Store/.github/actions/addon-sbom@8f35e661dd2f08f13209465220340d7093f6192a # main 2026-10-29
+        uses: WOOWTECH/Woow_HA_App_Store/.github/actions/addon-sbom@57bae4319ad30041d4aac06a8e06069384d6a83e # main 2026-11-04
+        with:
+          component: woow_ha_opendesign
+          image: ghcr.io/woowtech/woow-ha-opendesign-${{ matrix.arch }}:${{ steps.metadata.outputs.version }}
+      # The same image is the new version of the upgrade test (pipeline
+      # #143, category 2): saved and uploaded as artifact
+      # upgrade-comparison-image-woow_ha_opendesign-attempt-<run attempt>,
+      # so the comparison neither rebuilds it nor needs a PR tag on GHCR.
+      - name: Image for the upgrade test
+        if: github.event_name == 'pull_request' && matrix.arch == 'amd64'
+        uses: WOOWTECH/Woow_HA_App_Store/.github/actions/addon-image@57bae4319ad30041d4aac06a8e06069384d6a83e # main 2026-11-04
         with:
           component: woow_ha_opendesign
           image: ghcr.io/woowtech/woow-ha-opendesign-${{ matrix.arch }}:${{ steps.metadata.outputs.version }}
@@ -164,17 +185,22 @@ jobs:
   # "Upgrade comparison / compare". build-nonrelease reads the same gha cache
   # scope as publish-release on main (a PR can read main's cache, main never
   # reads a PR's), so the SBOM is of the layers the Release build reuses.
+  # The upgrade test (#137, #143) starts the Release's GHCR image, then this
+  # PR's image (the amd64 build's image artifact) on the same /data and map
+  # directories; a new version that does not start blocks. Startup only, no
+  # data check yet. After a version bump it also waits for this run's image.
   upgrade-comparison:
     name: Upgrade comparison
     permissions:
       contents: read
       actions: read
-    uses: WOOWTECH/Woow_HA_App_Store/.github/workflows/woow-addon-upgrade-check.yml@8f35e661dd2f08f13209465220340d7093f6192a # main 2026-10-29
+    uses: WOOWTECH/Woow_HA_App_Store/.github/workflows/woow-addon-upgrade-check.yml@57bae4319ad30041d4aac06a8e06069384d6a83e # main 2026-11-04
     with:
       # The Store input asks for the same ref as the uses line; without it the
       # pinned workflow would run upgrade_check.py and registry.json from main.
-      tooling_ref: 8f35e661dd2f08f13209465220340d7093f6192a
+      tooling_ref: 57bae4319ad30041d4aac06a8e06069384d6a83e
       sbom_artifact: upgrade-comparison-sbom-*
+      image_artifact: upgrade-comparison-image-*
 
   # A dispatch on a review branch builds and tests the candidate locally, then
   # pushes those exact bytes to a unique prerelease tag. No Store Release/tag.
