@@ -141,7 +141,7 @@ jobs:
       # upgrade-comparison-sbom-woow_ha_opendesign-attempt-<run attempt>.
       - name: SBOM for the upgrade comparison
         if: github.event_name == 'pull_request' && matrix.arch == 'amd64'
-        uses: WOOWTECH/Woow_HA_App_Store/.github/actions/addon-sbom@57bae4319ad30041d4aac06a8e06069384d6a83e # main 2026-11-04
+        uses: WOOWTECH/Woow_HA_App_Store/.github/actions/addon-sbom@ee4d873708e749009bfecece80fe84a57a935b8e # main 2026-11-13 (#117 merge)
         with:
           component: woow_ha_opendesign
           image: ghcr.io/woowtech/woow-ha-opendesign-${{ matrix.arch }}:${{ steps.metadata.outputs.version }}
@@ -151,7 +151,7 @@ jobs:
       # so the comparison neither rebuilds it nor needs a PR tag on GHCR.
       - name: Image for the upgrade test
         if: github.event_name == 'pull_request' && matrix.arch == 'amd64'
-        uses: WOOWTECH/Woow_HA_App_Store/.github/actions/addon-image@57bae4319ad30041d4aac06a8e06069384d6a83e # main 2026-11-04
+        uses: WOOWTECH/Woow_HA_App_Store/.github/actions/addon-image@ee4d873708e749009bfecece80fe84a57a935b8e # main 2026-11-13 (#117 merge)
         with:
           component: woow_ha_opendesign
           image: ghcr.io/woowtech/woow-ha-opendesign-${{ matrix.arch }}:${{ steps.metadata.outputs.version }}
@@ -184,11 +184,11 @@ jobs:
     permissions:
       contents: read
       actions: read
-    uses: WOOWTECH/Woow_HA_App_Store/.github/workflows/woow-addon-upgrade-check.yml@57bae4319ad30041d4aac06a8e06069384d6a83e # main 2026-11-04
+    uses: WOOWTECH/Woow_HA_App_Store/.github/workflows/woow-addon-upgrade-check.yml@ee4d873708e749009bfecece80fe84a57a935b8e # main 2026-11-13 (#117 merge)
     with:
       # The Store input asks for the same ref as the uses line; without it the
       # pinned workflow would run upgrade_check.py and registry.json from main.
-      tooling_ref: 57bae4319ad30041d4aac06a8e06069384d6a83e
+      tooling_ref: ee4d873708e749009bfecece80fe84a57a935b8e
       sbom_artifact: upgrade-comparison-sbom-*
       image_artifact: upgrade-comparison-image-*
 

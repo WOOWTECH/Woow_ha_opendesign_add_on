@@ -29,9 +29,10 @@ release mechanism is described in the Woow_HA_App_Store README (section
    `stable_seconds` and `hook_timeout` (positive integer seconds);
    `hook_timeout` defaults to 600 and covers the whole `docker exec` of a
    hook. A PR that changes no version passes it in seconds. The result is in
-   the job summary. To re-run it, use "Re-run all jobs" while the Store ref
-   pinned in build.yml predates pipeline #131; from a pin that includes it,
-   "Re-run failed jobs" works too (Store README).
+   the job summary. To re-run it, "Re-run failed jobs" works: the artifacts
+   of jobs that did not run again are read from the attempt they ran in
+   (pipeline #131, Store README). This needs a Store ref pinned in build.yml
+   that includes #131; keep it that way when you move the pin.
 3. **Breaking changes must be declared in `upgrade-notes.yaml`** next to the
    addon's `config.yaml` (here `upgrade-notes.yaml` in the repository root).
    Create the file only when the upgrade comparison asks for it; copy `change`
