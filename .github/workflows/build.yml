@@ -137,10 +137,11 @@ jobs:
           cache-to: type=gha,scope=opendesign-${{ matrix.arch }},mode=max
       # The SBOM of this image is what the Upgrade comparison scans as the
       # new version (pipeline #89, category 4): pinned Syft from the Store,
-      # uploaded as artifact upgrade-comparison-sbom-woow_ha_opendesign.
+      # uploaded as artifact
+      # upgrade-comparison-sbom-woow_ha_opendesign-attempt-<run attempt>.
       - name: SBOM for the upgrade comparison
         if: github.event_name == 'pull_request' && matrix.arch == 'amd64'
-        uses: WOOWTECH/Woow_HA_App_Store/.github/actions/addon-sbom@57bae4319ad30041d4aac06a8e06069384d6a83e # main 2026-11-04
+        uses: WOOWTECH/Woow_HA_App_Store/.github/actions/addon-sbom@ee4d873708e749009bfecece80fe84a57a935b8e # main 2026-11-13 (#117 merge)
         with:
           component: woow_ha_opendesign
           image: ghcr.io/woowtech/woow-ha-opendesign-${{ matrix.arch }}:${{ steps.metadata.outputs.version }}
@@ -150,7 +151,7 @@ jobs:
       # so the comparison neither rebuilds it nor needs a PR tag on GHCR.
       - name: Image for the upgrade test
         if: github.event_name == 'pull_request' && matrix.arch == 'amd64'
-        uses: WOOWTECH/Woow_HA_App_Store/.github/actions/addon-image@57bae4319ad30041d4aac06a8e06069384d6a83e # main 2026-11-04
+        uses: WOOWTECH/Woow_HA_App_Store/.github/actions/addon-image@ee4d873708e749009bfecece80fe84a57a935b8e # main 2026-11-13 (#117 merge)
         with:
           component: woow_ha_opendesign
           image: ghcr.io/woowtech/woow-ha-opendesign-${{ matrix.arch }}:${{ steps.metadata.outputs.version }}
@@ -173,33 +174,21 @@ jobs:
               test ! -e /opt/ha-opendesign/ha-pi-wrapper.mjs
             '
 
-  # Upgrade comparison (pipeline #89): a PR that bumps the add-on version is
-  # compared with the newest formal Release. A breaking config.yaml change
-  # not declared in upgrade-notes.yaml blocks it, and so does a new fixable
-  # Critical/High vulnerability in the amd64 image (the SBOM from
-  # build-nonrelease against the Release's GHCR image) unless that file
-  # accepts it. No needs: on the build, so a PR that changes no version
-  # passes in seconds; after a version bump the job waits for this run's SBOM
-  # artifact (actions: read) and fails if build-nonrelease never uploads it.
-  # On push and dispatch the job passes at once, so this workflow's non-PR run
-  # (registry required_workflows) still succeeds. Reported as
-  # "Upgrade comparison / compare". build-nonrelease reads the same gha cache
-  # scope as publish-release on main (a PR can read main's cache, main never
-  # reads a PR's), so the SBOM is of the layers the Release build reuses.
-  # The upgrade test (#137, #143) starts the Release's GHCR image, then this
-  # PR's image (the amd64 build's image artifact) on the same /data and map
-  # directories; a new version that does not start blocks. Startup only, no
-  # data check yet. After a version bump it also waits for this run's image.
+  # Upgrade comparison (pipeline #89): rules, inputs and re-runs are in the
+  # Store README, "升版比對與 `upgrade-notes.yaml`".
+  # On dispatch the job passes at once too. build-nonrelease reads the same gha
+  # cache scope as publish-release on main (a PR can read main's cache, main
+  # never reads a PR's), so the SBOM is of the layers the Release build reuses.
   upgrade-comparison:
     name: Upgrade comparison
     permissions:
       contents: read
       actions: read
-    uses: WOOWTECH/Woow_HA_App_Store/.github/workflows/woow-addon-upgrade-check.yml@57bae4319ad30041d4aac06a8e06069384d6a83e # main 2026-11-04
+    uses: WOOWTECH/Woow_HA_App_Store/.github/workflows/woow-addon-upgrade-check.yml@ee4d873708e749009bfecece80fe84a57a935b8e # main 2026-11-13 (#117 merge)
     with:
       # The Store input asks for the same ref as the uses line; without it the
       # pinned workflow would run upgrade_check.py and registry.json from main.
-      tooling_ref: 57bae4319ad30041d4aac06a8e06069384d6a83e
+      tooling_ref: ee4d873708e749009bfecece80fe84a57a935b8e
       sbom_artifact: upgrade-comparison-sbom-*
       image_artifact: upgrade-comparison-image-*
 
