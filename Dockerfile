@@ -51,10 +51,14 @@ ENV NODE_ENV=production \
 
 # Only the HA-specific packages; chromium, CJK/emoji fonts, fontconfig, bash,
 # python3, ripgrep, gcompat, libgcc/libstdc++, tmux and tini come from the core.
+# Not pinned: Alpine keeps only the newest revision of each package, so an
+# exact `-rN` pin stops resolving as soon as the package is rebuilt. The core's
+# /etc/apk/world has only `~` range constraints (abseil-cpp, icu-libs, re2,
+# tmux), which newer revisions still satisfy, so it needs no rewrite here.
 RUN apk add --no-cache \
       nginx \
       su-exec \
-      ttyd=1.7.7-r0 \
+      ttyd \
     && rm -rf /etc/nginx/http.d/* /var/cache/apk/*
 
 # playwright-core for the injected headless export renderer, locked separately

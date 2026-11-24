@@ -27,7 +27,7 @@ with (ROOT / ".github/workflows/build.yml").open() as handle:
 check(isinstance(workflow, dict) and "jobs" in workflow, "GitHub Actions workflow YAML is invalid")
 check(set(repository) == {"name", "url", "maintainer"}, "repository.yaml must have the repository contract keys")
 check(repository.get("url") == "https://github.com/WOOWTECH/Woow_ha_opendesign_add_on", "repository URL mismatch")
-check(config.get("version") == "0.2.15", "release version must be 0.2.15")
+check(config.get("version") == "0.2.16", "release version must be 0.2.16")
 check("browser-local API BYOK" in config.get("description", ""), "add-on description must describe browser-local BYOK")
 check(config.get("arch") == ["amd64"], "the core image is amd64-only; only amd64 is allowed")
 check(config.get("ingress") is True, "ingress must be enabled")
@@ -140,7 +140,7 @@ check("/usr/sbin/nginx -e stderr" in launcher, "unprivileged nginx must use its 
 apk_block = re.search(r"RUN apk add --no-cache(.*?)&& rm -rf", dockerfile, re.S)
 check(apk_block is not None, "HA package install step missing")
 if apk_block:
-    check(apk_block.group(1).split() == ["\\", "nginx", "\\", "su-exec", "\\", "ttyd=1.7.7-r0", "\\"], "only HA-specific packages may be installed over the core")
+    check(apk_block.group(1).split() == ["\\", "nginx", "\\", "su-exec", "\\", "ttyd", "\\"], "only HA-specific packages may be installed over the core")
 for core_assertion in [
     "test -f /app/skills/woowtech-brand/SKILL.md",
     "test ! -e /app/skills/brainstorming",
