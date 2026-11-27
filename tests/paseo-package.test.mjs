@@ -44,6 +44,8 @@ test('HA installation aligns native launch metadata, verifies core capabilities 
 test('bridge is a required same-container child with persistent state and a private nginx socket',()=>{
  const launcher=read('rootfs/usr/local/bin/ha-opendesign');
  for(const fragment of ['"$DATA_DIR/paseo"','chmod 0700 "$DATA_DIR/paseo"','prepare_owned_dir /run/ha-opendesign-paseo open-design:ha-ingress','chmod 2750 /run/ha-opendesign-paseo','start_child paseo','su-exec open-design:open-design /usr/bin/env','OPENDESIGN_PASEO_TRANSPORT=ha-ingress','OPENDESIGN_PASEO_NATIVE_PORT=7456 OPENDESIGN_PASEO_AUTO_ENABLE=1','/opt/opendesign-paseo/bin/serve.mjs'])assert.ok(launcher.includes(fragment),fragment);
+ assert.match(fs.readFileSync('paseo-runtime/install.sh','utf8'),/chmod -R a\+rX,go-w \/opt\/opendesign-paseo\/managed-runtime/,
+   'root-built managed runtime and its 0600 receipt must be readable by UID 1001 without becoming writable');
  const outer = Number(read('config.yaml').match(/^timeout: (\d+)$/m)?.[1]);
  const inner = Number(launcher.match(/readonly SHUTDOWN_GRACE_SECONDS=(\d+)/)?.[1]);
  assert.ok(inner >= 25 && outer >= inner + 5, 'Supervisor must allow native cleanup plus a stop margin');
