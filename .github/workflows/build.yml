@@ -79,6 +79,20 @@ jobs:
           cache-to: type=gha,scope=opendesign-amd64,mode=max
       - name: Container, renderer, and browser ingress smoke
         run: ./tests/container-smoke.sh woow-ha-opendesign:smoke
+      # container-smoke above remains the positive product-entrypoint test.
+      # This separate check keeps tini as PID 1 and exercises only the baked,
+      # account-free managed runtime with no network or persistent HA data.
+      - name: Offline Agent Connect managed-runtime smoke
+        run: |
+          set -Eeuo pipefail
+          docker run --rm --platform linux/amd64 \
+            --network none \
+            --user 1001:1001 \
+            --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=1g,uid=1001,gid=1001,mode=0700 \
+            --entrypoint /sbin/tini \
+            woow-ha-opendesign:smoke \
+            -- node /opt/opendesign-paseo/scripts/smoke-managed-runtime.mjs
 
   build-nonrelease:
     if: ${{ ! inputs.candidate_core_image }}
@@ -245,6 +259,19 @@ jobs:
         env:
           CANDIDATE_IMAGE: ${{ steps.candidate.outputs.image }}
         run: ./tests/container-smoke.sh "$CANDIDATE_IMAGE"
+      - name: Offline Agent Connect managed-runtime smoke
+        env:
+          CANDIDATE_IMAGE: ${{ steps.candidate.outputs.image }}
+        run: |
+          set -Eeuo pipefail
+          docker run --rm --platform linux/amd64 \
+            --network none \
+            --user 1001:1001 \
+            --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=1g,uid=1001,gid=1001,mode=0700 \
+            --entrypoint /sbin/tini \
+            "$CANDIDATE_IMAGE" \
+            -- node /opt/opendesign-paseo/scripts/smoke-managed-runtime.mjs
       - name: Refuse existing candidate tag
         env:
           GHCR_ACTOR: ${{ github.actor }}

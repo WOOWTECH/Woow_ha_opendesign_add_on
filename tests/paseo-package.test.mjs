@@ -13,23 +13,31 @@ test('shared runtime archive and separately retained npm lock match the reviewed
   assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(root,'paseo-runtime',name))).digest('hex'),expected);
   assert.ok(read('paseo-runtime/checksums.sha256').includes(`${expected}  ${name}`));
  }
- assert.match(manifest.commit,/^[0-9a-f]{40}$/);assert.equal(manifest.version,'0.2.3');
+ assert.match(manifest.commit,/^[0-9a-f]{40}$/);assert.equal(manifest.version,'0.3.0-rc.1');assert.equal(manifest.paseo_cli_version,'0.17.5');
  const archive=spawnSync('tar',['-xOzf',path.join(root,'paseo-runtime/package.tgz'),'package/package.json'],{encoding:'utf8'});
  assert.equal(archive.status,0,archive.stderr);const pkg=JSON.parse(archive.stdout);
+ const launcher=spawnSync('tar',['-xOzf',path.join(root,'paseo-runtime/package.tgz'),'package/launcher/open-design.json'],{encoding:'utf8'});
+ assert.equal(launcher.status,0,launcher.stderr);const launcherManifest=JSON.parse(launcher.stdout);
  const lock=JSON.parse(read('paseo-runtime/package-lock.json'));
  assert.equal(pkg.version,manifest.version);assert.equal(lock.packages[''].version,pkg.version);
+ assert.equal(launcherManifest.title,'Agent Connect');assert.equal(launcherManifest.version,pkg.version);
  assert.deepEqual(lock.packages[''].dependencies,pkg.dependencies);
  const listed=spawnSync('tar',['-tzf',path.join(root,'paseo-runtime/package.tgz')],{encoding:'utf8'});
  assert.equal(listed.status,0);
- for(const file of ['host/ha-ingress.mjs','host/standalone.mjs','bin/serve.mjs','bin/supervise.mjs','bin/mcp.mjs','src/flock-helper.py','vendor/pi-paseo/runtime/package-lock.json'])assert.ok(listed.stdout.split('\n').includes('package/'+file));
+ for(const file of ['host/ha-ingress.mjs','host/standalone.mjs','bin/serve.mjs','bin/supervise.mjs','bin/mcp.mjs','src/flock-helper.py','scripts/prepare-managed-runtime.mjs','scripts/smoke-managed-runtime.mjs','vendor/pi-paseo/runtime/package-lock.json'])assert.ok(listed.stdout.split('\n').includes('package/'+file));
+ const preparer=spawnSync('tar',['-xOzf',path.join(root,'paseo-runtime/package.tgz'),'package/scripts/prepare-managed-runtime.mjs'],{encoding:'utf8'});
+ assert.equal(preparer.status,0,preparer.stderr);
+ for(const fragment of ["['ci', '--prefix', root, '--omit=dev', '--ignore-scripts'","['rebuild', '--prefix', root, 'node-pty', '--ignore-scripts=false'","npm_config_build_from_source: 'true'","pty.spawn('/bin/sh",'markRuntimeReady(loc)'])assert.ok(preparer.stdout.includes(fragment),fragment);
+ assert.ok(preparer.stdout.indexOf('pty.spawn')<preparer.stdout.indexOf('markRuntimeReady(loc)'));
  assert.doesNotMatch(listed.stdout,/node_modules|browser-auth|\.private|\/preload\.mjs/);
 });
 
 test('HA installation verifies native core capabilities without an overlay and keeps runtime code immutable',()=>{
  const install=read('paseo-runtime/install.sh');
- for(const fragment of ['sha256sum -c','npm ci --omit=dev --ignore-scripts','verifyBundledInstallation','/app/apps/daemon/dist/routes/mcp-servers.js','registerMcpServerRoutes','chown -R root:root'])assert.ok(install.includes(fragment),fragment);
+ for(const fragment of ['sha256sum -c','npm ci --omit=dev --ignore-scripts','scripts/prepare-managed-runtime.mjs','managed-runtime','verifyBundledInstallation','/app/apps/daemon/dist/routes/mcp-servers.js','registerMcpServerRoutes','chown -R root:root'])assert.ok(install.includes(fragment),fragment);
  assert.doesNotMatch(install,/cp .*\/app\//);
  assert.ok(read('Dockerfile').includes('sh /tmp/paseo-runtime/install.sh'));
+ for(const fragment of ['.agent-connect-build build-base python3','apk del .agent-connect-build'])assert.ok(read('Dockerfile').includes(fragment),fragment);
 });
 
 test('bridge is a required same-container child with persistent state and a private nginx socket',()=>{

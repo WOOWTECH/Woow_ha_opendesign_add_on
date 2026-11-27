@@ -8,6 +8,7 @@ tar -xzf package.tgz --strip-components=1 -C /opt/opendesign-paseo
 # exact source commit alongside the archive, with its own digest.
 cp package-lock.json /opt/opendesign-paseo/package-lock.json
 npm ci --omit=dev --ignore-scripts --no-audit --no-fund --prefix /opt/opendesign-paseo
+node /opt/opendesign-paseo/scripts/prepare-managed-runtime.mjs /opt/opendesign-paseo/managed-runtime
 node --input-type=module -e '
 import {verifyBundledInstallation} from "/opt/opendesign-paseo/host/standalone.mjs";
 if(!verifyBundledInstallation("/app/plugins/_official/woow/woow-paseo"))throw Error("Native Paseo core required; obtain reviewed w2.5 digest before building");
