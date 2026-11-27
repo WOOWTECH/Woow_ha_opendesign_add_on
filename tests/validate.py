@@ -27,7 +27,7 @@ with (ROOT / ".github/workflows/build.yml").open() as handle:
 check(isinstance(workflow, dict) and "jobs" in workflow, "GitHub Actions workflow YAML is invalid")
 check(set(repository) == {"name", "url", "maintainer"}, "repository.yaml must have the repository contract keys")
 check(repository.get("url") == "https://github.com/WOOWTECH/Woow_ha_opendesign_add_on", "repository URL mismatch")
-check(config.get("version") == "0.2.15", "release version must be 0.2.15")
+check(config.get("version") == "0.2.16", "release version must be 0.2.16")
 check("browser-local API BYOK" in config.get("description", ""), "add-on description must describe browser-local BYOK")
 check(config.get("arch") == ["amd64"], "the core image is amd64-only; only amd64 is allowed")
 check(config.get("ingress") is True, "ingress must be enabled")
@@ -44,8 +44,8 @@ check(config.get("image") == "ghcr.io/woowtech/woow-ha-opendesign-{arch}", "arch
 # The add-on derives from the shared WoowTech OpenDesign core image. Every build
 # input names the same published core (digest for CI/Dockerfile, its immutable
 # tag for Supervisor local builds), so no build can fall back to upstream OpenDesign.
-core_image = "ghcr.io/woowtech/open-design-core:20261101.2319@sha256:a3d1e6ce84774d11e03a31b379be438b5f53fe832ddd4b72d31fc837462bbd62"
-local_core_image = "ghcr.io/woowtech/open-design-core:20261101.2319"
+core_image = "ghcr.io/woowtech/open-design-core:20261125.0309@sha256:b14344ab0fb661971f8557f8de1b12429e623ede6b4da6f073f28791b6cdbe08"
+local_core_image = "ghcr.io/woowtech/open-design-core:20261125.0309"
 check(build.get("build_from") == {"amd64": local_core_image}, "Supervisor local builds must use the core image (tag syntax, amd64 only)")
 check("nexu-io/od" not in (ROOT / "build.yaml").read_text(), "build.yaml must not fall back to the upstream OpenDesign image")
 check(package.get("dependencies") == {"playwright-core": "1.55.0"}, "renderer dependency must remain exactly pinned")
@@ -140,7 +140,7 @@ check("/usr/sbin/nginx -e stderr" in launcher, "unprivileged nginx must use its 
 apk_block = re.search(r"RUN apk add --no-cache(.*?)&& rm -rf", dockerfile, re.S)
 check(apk_block is not None, "HA package install step missing")
 if apk_block:
-    check(apk_block.group(1).split() == ["\\", "nginx", "\\", "su-exec", "\\", "ttyd=1.7.7-r0", "\\"], "only HA-specific packages may be installed over the core")
+    check(apk_block.group(1).split() == ["\\", "nginx", "\\", "su-exec", "\\", "ttyd", "\\"], "only HA-specific packages may be installed over the core")
 for core_assertion in [
     "test -f /app/skills/woowtech-brand/SKILL.md",
     "test ! -e /app/skills/brainstorming",

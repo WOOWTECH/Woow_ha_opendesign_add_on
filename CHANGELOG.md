@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.16
+
+- Fix: the add-on image could stop building once Alpine published a newer build of `ttyd`, because the Dockerfile asked for one exact build (`1.7.7-r0`) and Alpine keeps only the newest. `ttyd` is now installed without that lock. The core image's own package list was checked too: it only uses version ranges that newer builds still satisfy, so it needs no change.
+- Fix: the add-on image stopped building on the w2.11 core `20261101.2319`. That core ships `python3-3.14.10-r1`; Alpine has since split `_dbm` into `python3-ndbm`, and installing `nginx su-exec ttyd` pulled in a newer `python3-ndbm` whose file clashed with the core's python3. The add-on now uses the rebuilt core `20261125.0309` (`sha256:b14344ab…`), the same w2.11 OpenDesign code with current Alpine packages (python3 `3.14.10-r2`, `python3-ndbm` included). Among the refreshed packages Chromium moves from 155 to 158; the image grows about 42 MiB.
+- OpenDesign 0.24.1 and the agent CLI versions the core must provide are unchanged, so the build-time contract in the Dockerfile is untouched. No option, port, architecture, image name or data-layout change. Upgrading from 0.2.15 needs no migration.
+
 ## 0.2.15
 
 - Update the bundled OpenDesign core from the w2.10 core `20261029.0033` to the w2.11 core `20261101.2319` (`sha256:a3d1e6ce…`, WoowTech fork revision `05b23f5a`). The only behaviour change is Omnigent's Pi model menu: when a provider key reaches Pi through an environment variable, or `models.json` only overrides a built-in provider, the menu now lists the models Pi itself reports instead of showing none. Custom gateways written in `models.json` are still read directly, and with nothing configured the menu stays empty without a placeholder entry.
