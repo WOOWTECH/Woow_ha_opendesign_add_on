@@ -10,7 +10,7 @@
 # The w2.10 core is promoted and imported publicly only after Gitea approval;
 # it contains the native integration and preinstalled SDK. Keep Dockerfile, CI,
 # tests and the Supervisor local-build tag aligned with pin-core.sh.
-ARG BUILD_FROM=ghcr.io/woowtech/open-design-core:20261101.2319@sha256:a3d1e6ce84774d11e03a31b379be438b5f53fe832ddd4b72d31fc837462bbd62
+ARG BUILD_FROM=ghcr.io/woowtech/open-design-core:20261125.0309@sha256:b14344ab0fb661971f8557f8de1b12429e623ede6b4da6f073f28791b6cdbe08
 
 # --- Built-in Woow OpenDesign MCP server: admin UI assets (mcp-runtime/, see mcp-runtime/README.md) ---
 # Built with the core image's own Node/npm from the vendored, lock-pinned UI sources; only dist/ is kept.
