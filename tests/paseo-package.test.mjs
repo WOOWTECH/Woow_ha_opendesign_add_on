@@ -32,10 +32,11 @@ test('shared runtime archive and separately retained npm lock match the reviewed
  assert.doesNotMatch(listed.stdout,/node_modules|browser-auth|\.private|\/preload\.mjs/);
 });
 
-test('HA installation verifies native core capabilities without an overlay and keeps runtime code immutable',()=>{
+test('HA installation aligns native launch metadata, verifies core capabilities and keeps runtime code immutable',()=>{
  const install=read('paseo-runtime/install.sh');
  for(const fragment of ['sha256sum -c','npm ci --omit=dev --ignore-scripts','scripts/prepare-managed-runtime.mjs','managed-runtime','verifyBundledInstallation','/app/apps/daemon/dist/routes/mcp-servers.js','registerMcpServerRoutes','chown -R root:root'])assert.ok(install.includes(fragment),fragment);
  assert.doesNotMatch(install,/cp .*\/app\//);
+ assert.ok(install.includes('install -m 0644 /opt/opendesign-paseo/launcher/open-design.json /opt/opendesign-paseo/launcher/SKILL.md /app/plugins/_official/woow/woow-paseo/'));
  assert.ok(read('Dockerfile').includes('sh /tmp/paseo-runtime/install.sh'));
  for(const fragment of ['.agent-connect-build build-base python3','apk del .agent-connect-build'])assert.ok(read('Dockerfile').includes(fragment),fragment);
 });
