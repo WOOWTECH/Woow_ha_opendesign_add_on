@@ -16,15 +16,54 @@ sibling_ip=172.30.33.20
 # transient browser-style request as a log line or persisted /data artifact.
 readonly BYOK_FAKE_KEY='od-byok-test-key-not-a-secret'
 tmp=$(mktemp -d)
+diagnostic_container="${container}-diagnostic"
+diagnostic_volume="${volume}-diagnostic"
+
+run_paseo_startup_diagnostic() {
+  # The shipping image remains byte-for-byte unchanged. Patch only a disposable
+  # container overlay so the otherwise opaque serve.mjs catch emits an
+  # allowlisted code/status and package-local source locations (never messages,
+  # request bodies, URLs, environment values, or profile contents).
+  docker rm -f "$container" >/dev/null 2>&1 || true
+  docker volume create "$diagnostic_volume" >/dev/null
+  docker run --rm --platform linux/amd64 -v "$diagnostic_volume:/data" --entrypoint sh "$image" -ceu '
+    mkdir -p /data/opendesign/home/.omnigent /data/opendesign/.backup/omnigent-retired
+    chmod 0700 /data/opendesign/.backup /data/opendesign/.backup/omnigent-retired
+    printf "server: https://legacy.invalid\nhost:\n  host_id: retired-host\n" > /data/opendesign/home/.omnigent/config.yaml
+    printf "{\"token\":\"fake-legacy-not-for-adoption\"}" > /data/opendesign/home/.omnigent/auth_tokens.json
+    printf "{\"token\":\"fake-archived-not-for-adoption\"}" > /data/opendesign/.backup/omnigent-retired/auth_tokens.json
+  '
+  docker run -d --platform linux/amd64 --name "$diagnostic_container" \
+    --network "$net" --ip "$addon_ip" \
+    -e SUPERVISOR_TOKEN="$SUPERVISOR_FAKE_TOKEN" \
+    -v "$diagnostic_volume:/data" \
+    -v "$PWD/tests/paseo-startup-diagnostic.py:/tmp/paseo-startup-diagnostic.py:ro" \
+    --entrypoint sh "$image" -ceu '
+      python3 /tmp/paseo-startup-diagnostic.py /opt/opendesign-paseo/bin/serve.mjs
+      exec /sbin/tini -- /usr/local/bin/ha-opendesign
+    ' >/dev/null
+  for _ in $(seq 1 45); do
+    docker logs "$diagnostic_container" 2>&1 | grep -q '^PASEO_DIAGNOSTIC ' && break
+    test "$(docker inspect -f '{{.State.Running}}' "$diagnostic_container" 2>/dev/null)" = true || break
+    sleep 1
+  done
+  docker logs "$diagnostic_container" 2>&1 | grep '^PASEO_DIAGNOSTIC ' | tail -1 \
+    || echo 'PASEO_DIAGNOSTIC_NOT_REPRODUCED'
+}
 
 cleanup() {
   local status=$?
   if (( status != 0 )); then
     echo '--- smoke container logs ---' >&2
     docker logs "$container" >&2 || true
+    if docker logs "$container" 2>&1 | grep -qF 'Paseo launcher initialization failed'; then
+      run_paseo_startup_diagnostic >&2 || true
+    fi
   fi
   docker rm -f "$container" >/dev/null 2>&1 || true
+  docker rm -f "$diagnostic_container" >/dev/null 2>&1 || true
   docker volume rm "$volume" >/dev/null 2>&1 || true
+  docker volume rm "$diagnostic_volume" >/dev/null 2>&1 || true
   docker network rm "$net" >/dev/null 2>&1 || true
   rm -rf "$tmp"
 }
