@@ -43,11 +43,13 @@ run_paseo_startup_diagnostic() {
       exec /sbin/tini -- /usr/local/bin/ha-opendesign
     ' >/dev/null
   for _ in $(seq 1 45); do
-    docker logs "$diagnostic_container" 2>&1 | grep -q '^PASEO_DIAGNOSTIC ' && break
+    docker logs "$diagnostic_container" >"$tmp/paseo-diagnostic.log" 2>&1 || true
+    grep -q '^PASEO_DIAGNOSTIC ' "$tmp/paseo-diagnostic.log" && break
     test "$(docker inspect -f '{{.State.Running}}' "$diagnostic_container" 2>/dev/null)" = true || break
     sleep 1
   done
-  docker logs "$diagnostic_container" 2>&1 | grep '^PASEO_DIAGNOSTIC ' | tail -1 \
+  docker logs "$diagnostic_container" >"$tmp/paseo-diagnostic.log" 2>&1 || true
+  grep '^PASEO_DIAGNOSTIC ' "$tmp/paseo-diagnostic.log" | tail -1 \
     || echo 'PASEO_DIAGNOSTIC_NOT_REPRODUCED'
 }
 
@@ -55,8 +57,9 @@ cleanup() {
   local status=$?
   if (( status != 0 )); then
     echo '--- smoke container logs ---' >&2
-    docker logs "$container" >&2 || true
-    if docker logs "$container" 2>&1 | grep -qF 'Paseo launcher initialization failed'; then
+    docker logs "$container" >"$tmp/container.log" 2>&1 || true
+    cat "$tmp/container.log" >&2
+    if grep -qF 'Paseo launcher initialization failed' "$tmp/container.log"; then
       run_paseo_startup_diagnostic >&2 || true
     fi
   fi
