@@ -593,7 +593,11 @@ docker run --rm --platform linux/amd64 -v "$volume:/data" \
   --entrypoint sh "$image" -ceu '
   # Disposable fixture: model the sole native backup_exclude subtree. Actual
   # Supervisor backup/uninstall/fresh restore is a separate native HA gate.
-  test -d /data/opendesign/paseo/packages/runtime/releases
+  # The current image ships its runtime read-only. Seed only a retired cache
+  # fixture to model Supervisor excluding that legacy subtree from the backup.
+  test ! -e /data/opendesign/paseo/packages/runtime
+  mkdir -p /data/opendesign/paseo/packages/runtime/releases
+  printf retired-cache-fixture > /data/opendesign/paseo/packages/runtime/releases/fixture
   rm -rf /data/opendesign/paseo/packages/runtime
   find /data/opendesign -mindepth 1 -exec chown -h 0:0 {} +
   test "$(find /data/opendesign -mindepth 1 -user 0 | wc -l)" -gt 0
@@ -640,12 +644,14 @@ docker exec -u 1001:1001 "$container" node /tmp/container-omnigent-contract.mjs 
 
 # The previous restored check resumed Paseo through the GUI action. Repeat
 # with enabled intent, missing runtime files and root-owned restored data;
-# startup must rebuild without an enable request or new onboarding identity.
+# startup must use the baked runtime without an enable request or new identity.
 docker stop -t 45 "$container" >/dev/null
 test "$(docker inspect -f '{{.State.ExitCode}}' "$container")" = 0
 docker rm "$container" >/dev/null
 docker run --rm --platform linux/amd64 -v "$volume:/data" --entrypoint sh "$image" -ceu '
-  test -d /data/opendesign/paseo/packages/runtime/releases
+  test ! -e /data/opendesign/paseo/packages/runtime
+  mkdir -p /data/opendesign/paseo/packages/runtime/releases
+  printf retired-cache-fixture > /data/opendesign/paseo/packages/runtime/releases/fixture
   rm -rf /data/opendesign/paseo/packages/runtime
   find /data/opendesign -mindepth 1 -exec chown -h 0:0 {} +
 '
